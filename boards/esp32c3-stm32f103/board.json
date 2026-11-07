@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "esp32c3-stm32f103",
+  "backend": "esp-idf",
+  "target": "esp32c3",
+  "description": "ESP32-C3 bridge to STM32F103C8; user wiring required",
+  "capabilities": [
+    "resident-update",
+    "module-runtime",
+    "wifi-management"
+  ],
+  "defaults": [
+    "esp32_rom/sdkconfig.defaults",
+    "config/ci-disabled.defaults"
+  ],
+  "target_device": "stm32f103c8",
+  "pins": {
+    "tx": 3,
+    "rx": 4,
+    "boot0": 5,
+    "nrst": 6,
+    "boot1": -1,
+    "spi_sclk": 7,
+    "spi_mosi": 1,
+    "spi_miso": 0,
+    "spi_cs": 10
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "description",
+    "implementation",
+    "driver",
+    "capabilities",
+    "requirements"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "implementation": {
+      "type": "string"
+    },
+    "driver": {
+      "type": "string"
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "module-runtime",
+          "resident-update",
+          "spi",
+          "uart",
+          "wifi-management"
+        ]
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "required": [
+        "sdk",
+        "toolchain",
+        "python"
+      ],
+      "properties": {
+        "sdk": {
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "environment"
+          ]
+        },
+        "toolchain": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "python": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

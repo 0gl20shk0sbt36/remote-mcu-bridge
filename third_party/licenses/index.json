@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "files": [
+    {
+      "file": "ESP-IDF-Apache-2.0.txt",
+      "source": "ESP-IDF/LICENSE",
+      "scope": "ESP-IDF v5.5.5 core (not a blanket license for all bundled components)",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "copied_verbatim": true
+    },
+    {
+      "file": "cJSON-MIT.txt",
+      "source": "ESP-IDF/components/json/cJSON/LICENSE",
+      "scope": "cJSON 1.7.19",
+      "sha256": "a36dda207c36db5818729c54e7ad4e8b0c6fba847491ba64f372c1a2037b6d5c",
+      "copied_verbatim": true
+    },
+    {
+      "file": "STM32CubeF1-component-license-table.md",
+      "source": "vendor/STM32CubeF1/LICENSE.md",
+      "scope": "STM32CubeF1 local upstream component table",
+      "sha256": "4e3d5dab7f35d16f73f29bb96616626cbc7e64a07bcea7f4fcc6dde218cc380f",
+      "copied_verbatim": true
+    },
+    {
+      "file": "STM32F1-HAL-BSD-3-Clause.txt",
+      "source": "vendor/STM32CubeF1/Drivers/STM32F1xx_HAL_Driver/LICENSE.md",
+      "scope": "Pinned STM32F1 HAL",
+      "sha256": "dff179cfe1405dc3381dc6865bf4a5173b35605b65694d73356b01aaec1f09f1",
+      "copied_verbatim": true
+    },
+    {
+      "file": "CMSIS-Apache-2.0.txt",
+      "source": "vendor/STM32CubeF1/Drivers/CMSIS/LICENSE.txt",
+      "scope": "CubeF1 CMSIS core",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+      "copied_verbatim": true
+    },
+    {
+      "file": "STM32F1-device-Apache-2.0.txt",
+      "source": "vendor/STM32CubeF1/Drivers/CMSIS/Device/ST/STM32F1xx/License.md",
+      "scope": "Pinned STM32F1 CMSIS device",
+      "sha256": "b645e89bbfb6accf914cf7adca011712bf90055391fdd55f2af6439d98aa36d4",
+      "copied_verbatim": true
+    },
+    {
+      "file": "CubeMX-F103-HAL-license-reference.txt",
+      "source": "app_cubemx_f103/Drivers/STM32F1xx_HAL_Driver/LICENSE.txt",
+      "scope": "CubeMX local HAL license reference",
+      "sha256": "d5a162f3eaf2b7b6762f00700017cae5695ebbdce7932fead8316448baafd9c1",
+      "copied_verbatim": true
+    },
+    {
+      "file": "CubeMX-F103-CMSIS-license-reference.txt",
+      "source": "app_cubemx_f103/Drivers/CMSIS/LICENSE.txt",
+      "scope": "CubeMX local CMSIS license reference",
+      "sha256": "e03ba41d7fab20700769fe4118bab50d800cb74f990353a05d2f5fff1c228363",
+      "copied_verbatim": true
+    },
+    {
+      "file": "CubeMX-F103-device-license-reference.txt",
+      "source": "app_cubemx_f103/Drivers/CMSIS/Device/ST/STM32F1xx/LICENSE.txt",
+      "scope": "CubeMX local device license reference",
+      "sha256": "b616ef9c1ae02a5da902bc4a3efb48a8a3170308b30fc09bfda77ba712f49f95",
+      "copied_verbatim": true
+    }
+  ]
+}

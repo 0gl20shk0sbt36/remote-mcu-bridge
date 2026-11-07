@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "esp-idf",
+  "description": "ESP32-C3 ESP-IDF resident runtime",
+  "implementation": "esp32_rom",
+  "capabilities": [
+    "resident-update",
+    "module-runtime",
+    "wifi-management"
+  ],
+  "requirements": {
+    "sdk": {
+      "name": "ESP-IDF",
+      "version": "5.5.5",
+      "environment": "IDF_PATH"
+    },
+    "toolchain": [
+      "riscv32-esp-elf-gcc"
+    ],
+    "python": ">=3.10"
+  },
+  "driver": "build.py"
+}

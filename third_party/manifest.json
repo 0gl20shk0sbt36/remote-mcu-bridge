@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "dependencies": [
+    {
+      "name": "ESP-IDF",
+      "version": "v5.5.5",
+      "commit": "b774170ff46c393eeb5e495ea37936038d3f4f4f",
+      "url": "https://github.com/espressif/esp-idf.git",
+      "path": ".deps/esp-idf",
+      "env": "IDF_PATH",
+      "license": "Apache-2.0 for IDF; bundled components have separate licenses",
+      "recursive_submodules": true,
+      "verification": "Existing clean local git checkout: HEAD and exact tag v5.5.5; recursive gitlink status checked.",
+      "submodules": [
+        {
+          "name": "cJSON",
+          "version": "1.7.19",
+          "path": "components/json/cJSON",
+          "url": "https://github.com/DaveGamble/cJSON.git",
+          "commit": "b2890c8d76bbb64e710585ebc0a917196b9c67e7",
+          "license": "MIT",
+          "gitlink_verified": true,
+          "verification": "git ls-tree HEAD and .gitmodules sbom-version; local cJSON CMakeLists.txt"
+        }
+      ]
+    },
+    {
+      "name": "STM32CubeF1",
+      "path": "vendor/STM32CubeF1",
+      "url": "https://github.com/STMicroelectronics/STM32CubeF1.git",
+      "submodules": [
+        {
+          "commit": "fee494a92b5ad331f92ad21f76c66a5cb83773ee",
+          "verification": {
+            "method": "git get-tar-commit-id (local git-archive PAX metadata)",
+            "archive": "stm32f1xx_hal_driver-fee494a92b5ad331f92ad21f76c66a5cb83773ee.tar.gz",
+            "archive_sha256": "70444182beec1a7c58cfda19e2c65420c1153422e532f8ee5f71e972e0873987"
+          },
+          "name": "hal",
+          "path": "Drivers/STM32F1xx_HAL_Driver",
+          "url": "https://github.com/STMicroelectronics/stm32f1xx_hal_driver.git",
+          "gitlink_verified": false,
+          "license": "BSD-3-Clause"
+        },
+        {
+          "commit": "c8e9a4a4f16b6d2cb2a2083cbe5161025280fb22",
+          "verification": {
+            "method": "git get-tar-commit-id (local git-archive PAX metadata)",
+            "archive": "cmsis_device_f1-c8e9a4a4f16b6d2cb2a2083cbe5161025280fb22.tar.gz",
+            "archive_sha256": "a48369b6cbd9196c6e15606cb031772e29521043be730d3e3ddcd165f8268541"
+          },
+          "name": "cmsis_device",
+          "path": "Drivers/CMSIS/Device/ST/STM32F1xx",
+          "url": "https://github.com/STMicroelectronics/cmsis_device_f1.git",
+          "gitlink_verified": false,
+          "license": "Apache-2.0"
+        }
+      ],
+      "commit": "d12e75247d5bcedc734f829b394517ab4c2726e3",
+      "verification": {
+        "method": "git get-tar-commit-id (local git-archive PAX metadata)",
+        "archive": "STM32CubeF1-d12e752.tar.gz",
+        "archive_sha256": "84ec7bf90bc22cc5156bdc64462f4ae7ca244e916589968a57cb883db9b7834c",
+        "version_evidence": "package.xml Patch=FW.F1.1.8.7; tag-to-commit relationship not checked online",
+        "caveat": "version-license.txt still identifies 1.8.6; package.xml is patch version evidence"
+      },
+      "version": "v1.8.7",
+      "env": "STM32CUBE_F1_PATH",
+      "license": "mixed: BSD-3-Clause (HAL), Apache-2.0 (CMSIS); see component records",
+      "gitlink_verified": false,
+      "verification_note": "HAL/device pins intentionally explicit; local archive provenance verified previously, parent gitlinks unavailable offline. Bootstrap uses these independent pins, not an asserted upstream submodule relationship."
+    }
+  ],
+  "scope": "ESP32-C3 esp32_rom and STM32F103 app_cubemx_f103 only; excludes STM32F4 and SDK components not linked by these targets.",
+  "build_dependencies": {
+    "esp32_rom": "ESP-IDF toolchain/Python environment; CMake >=3.16, Ninja; ESP-IDF install.sh esp32c3 is a separate explicit user step",
+    "app_cubemx_f103": "CMake >=3.22, Ninja or Make, arm-none-eabi GCC (original local build used Arm GNU 14.2); no compiler downloaded by bootstrap"
+  },
+  "idf_direct_components": [
+    "esp_app_format",
+    "driver",
+    "esp_wifi",
+    "esp_event",
+    "esp_netif",
+    "esp_timer",
+    "esp_partition",
+    "nvs_flash",
+    "json",
+    "mbedtls"
+  ],
+  "license_inventory": "licenses/index.json"
+}

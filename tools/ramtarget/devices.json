@@ -1,0 +1,156 @@
+{
+  "schema": "ramtarget/1",
+  "notes": [
+    "Only add a device after checking the memory map, vector-table rules and ROM-loader footprint in the vendor reference manual for that exact part.",
+    "sram_exec lists regions that can fetch instructions; sram_data_only lists regions that must never hold code or the vector table.",
+    "rom_reserve_bytes is the low end of the executable SRAM that belongs to the factory ROM loader (or to whatever pre-boot stage you keep resident).",
+    "vtor describes how the vendor startup code can be told where the vector table is."
+  ],
+  "devices": {
+    "STM32F407ZGT6": {
+      "family": "STM32F4",
+      "reference": "RM0090 (F405/407/415/417 memory map, Flash sector table), PM0214 (VTOR, 512-byte alignment), AN2606 (ROM loader SRAM footprint)",
+      "flash": {
+        "origin": "0x08000000",
+        "length": "1024K"
+      },
+      "sram_exec": [
+        {
+          "name": "RAM",
+          "origin": "0x20000000",
+          "length": "128K"
+        }
+      ],
+      "sram_data_only": [
+        {
+          "name": "CCMRAM",
+          "origin": "0x10000000",
+          "length": "64K"
+        }
+      ],
+      "rom_reserve_bytes": 16384,
+      "vector_align": 512,
+      "vtor": {
+        "type": "stm32_vect_tab",
+        "sram_base": "0x20000000"
+      },
+      "kernel_object_libs": [
+        "STM32_Drivers"
+      ],
+      "flash_sector_layout": "stm32f4_1mib",
+      "flash_sectors": [
+        {
+          "index": 0,
+          "origin": "0x08000000",
+          "length": "16K"
+        },
+        {
+          "index": 1,
+          "origin": "0x08004000",
+          "length": "16K"
+        },
+        {
+          "index": 2,
+          "origin": "0x08008000",
+          "length": "16K"
+        },
+        {
+          "index": 3,
+          "origin": "0x0800C000",
+          "length": "16K"
+        },
+        {
+          "index": 4,
+          "origin": "0x08010000",
+          "length": "64K"
+        },
+        {
+          "index": 5,
+          "origin": "0x08020000",
+          "length": "128K"
+        },
+        {
+          "index": 6,
+          "origin": "0x08040000",
+          "length": "128K"
+        },
+        {
+          "index": 7,
+          "origin": "0x08060000",
+          "length": "128K"
+        },
+        {
+          "index": 8,
+          "origin": "0x08080000",
+          "length": "128K"
+        },
+        {
+          "index": 9,
+          "origin": "0x080A0000",
+          "length": "128K"
+        },
+        {
+          "index": 10,
+          "origin": "0x080C0000",
+          "length": "128K"
+        },
+        {
+          "index": 11,
+          "origin": "0x080E0000",
+          "length": "128K"
+        }
+      ],
+      "device_id": "0x413",
+      "rom_erase_order": [
+        68,
+        67
+      ]
+    },
+    "STM32F405ZGT6": {
+      "extends": "STM32F407ZGT6",
+      "family": "STM32F4",
+      "reference": "Same memory map as STM32F407ZG (RM0090 applies to F405/407/415/417); Ethernet MAC is absent on F405"
+    },
+    "STM32F415ZGT6": {
+      "extends": "STM32F407ZGT6",
+      "family": "STM32F4"
+    },
+    "STM32F417ZGT6": {
+      "extends": "STM32F407ZGT6",
+      "family": "STM32F4"
+    },
+    "STM32F103C8T6": {
+      "family": "STM32F1",
+      "reference": "RM0008 Rev21 (64 KiB Flash in 1 KiB pages, 20 KiB SRAM), PM0056 (Cortex-M3 VTOR: bits[8:0] zero, 512-byte alignment), AN2606 Rev70 Table 45 (F10xxx ROM loader owns the first 512 bytes of SRAM, USART1 PA9/PA10, ID 0x410)",
+      "flash": {
+        "origin": "0x08000000",
+        "length": "64K"
+      },
+      "sram_exec": [
+        {
+          "name": "RAM",
+          "origin": "0x20000000",
+          "length": "20K"
+        }
+      ],
+      "sram_data_only": [],
+      "rom_reserve_bytes": 1024,
+      "vector_align": 512,
+      "vtor": {
+        "type": "stm32_vect_tab",
+        "sram_base": "0x20000000",
+        "guard_file": "Core/Src/system_stm32f1xx.c"
+      },
+      "kernel_object_libs": [
+        "STM32_Drivers"
+      ],
+      "flash_page_size": 1024,
+      "flash_pages": 64,
+      "device_id": "0x410",
+      "rom_erase_order": [
+        67,
+        68
+      ]
+    }
+  }
+}

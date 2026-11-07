@@ -1,0 +1,45 @@
+name: build
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/native_deps.py
+      - run: cmake --preset native && cmake --build --preset native && ctest --preset native --output-on-failure
+  esp-idf:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.5
+    strategy:
+      matrix:
+        profile: [safe, compile-enabled]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set installed SDK environment (no export.sh)
+        shell: bash
+        run: |
+          : "${IDF_PATH:=/opt/esp/idf}"
+          : "${IDF_TOOLS_PATH:=/opt/esp}"
+          test -f "$IDF_PATH/tools/idf.py"
+          shopt -s nullglob
+          compilers=("$IDF_TOOLS_PATH"/tools/riscv32-esp-elf/*/riscv32-esp-elf/bin/riscv32-esp-elf-gcc)
+          pythons=("$IDF_TOOLS_PATH"/python_env/idf5.5_py*_env/bin/python)
+          test "${#compilers[@]}" -eq 1
+          test "${#pythons[@]}" -eq 1
+          printf '%s\n' "${compilers[0]%/*}" "${pythons[0]%/*}" >> "$GITHUB_PATH"
+          printf '%s\n' "IDF_PATH=$IDF_PATH" "IDF_TOOLS_PATH=$IDF_TOOLS_PATH" "IDF_PYTHON_ENV_PATH=${pythons[0]%/bin/python}" >> "$GITHUB_ENV"
+      - name: Compile only; no device, flash or networking
+        shell: bash
+        run: |
+          python tools/rmb.py configure --backend esp-idf --board esp32c3-stm32f103 --profile ${{ matrix.profile }}
+          python tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103 --profile ${{ matrix.profile }}
+      - name: Real module link check — NOT DEPLOYABLE
+        if: matrix.profile == 'compile-enabled'
+        shell: bash
+        run: |
+          build=out/esp-idf/esp32c3-stm32f103/compile-enabled
+          mapfile -t elfs < <(find "$build" -maxdepth 1 -name '*.elf' -type f)
+          test "${#elfs[@]}" -eq 1
+          python tools/check_module_link.py --base-elf "${elfs[0]}"

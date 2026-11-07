@@ -1,0 +1,15 @@
+/out/
+/build*/
+/.deps/
+/vendor/
+/user-config/
+**/sdkconfig
+**/sdkconfig.old
+**/__pycache__/
+*.pyc
+*.elf
+*.bin
+*.map
+*.pem
+*.key
+.env
