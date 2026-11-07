@@ -42,9 +42,91 @@ def validate_image(image):
     return h
 
 
+SAFE_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_-]*\Z')
+SAFE_MACRO = re.compile(r'[A-Za-z_][A-Za-z0-9_]*\Z')
+DRIVER_COMPONENTS = {'uart': 'esp_driver_uart', 'spi': 'esp_driver_spi'}
+
+
+def load_manifest(path):
+    """Validate author input before any compile/link side effects."""
+    path = pathlib.Path(path).resolve(strict=True)
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate manifest key: ' + key)
+            result[key] = value
+        return result
+    manifest = json.loads(path.read_text(), object_pairs_hook=unique_object)
+    if not isinstance(manifest, dict):
+        raise ValueError('manifest must be an object')
+    if set(manifest) != {'name', 'sources', 'drivers', 'defines'}:
+        raise ValueError('manifest requires exactly name, sources, drivers, defines')
+    name = manifest['name']
+    if not isinstance(name, str) or not SAFE_NAME.fullmatch(name):
+        raise ValueError('manifest name must be a safe nonempty identifier')
+    raw_sources = manifest['sources']
+    if not isinstance(raw_sources, list) or not raw_sources:
+        raise ValueError('manifest sources must be a nonempty list')
+    sources = []
+    for source in raw_sources:
+        if not isinstance(source, str) or not source or pathlib.Path(source).is_absolute():
+            raise ValueError('manifest sources must be relative C file paths')
+        resolved = (path.parent / source).resolve(strict=True)
+        if not resolved.is_relative_to(path.parent) or not resolved.is_file() or resolved.suffix != '.c':
+            raise ValueError('manifest source must be a real C file within manifest directory')
+        if resolved in sources:
+            raise ValueError('duplicate manifest source: ' + source)
+        sources.append(resolved)
+    drivers = manifest['drivers']
+    if (not isinstance(drivers, list) or any(not isinstance(d, str) or d not in DRIVER_COMPONENTS for d in drivers)
+            or len(set(drivers)) != len(drivers)):
+        raise ValueError('manifest drivers must be unique entries from uart, spi')
+    defines = manifest['defines']
+    if not isinstance(defines, dict):
+        raise ValueError('manifest defines must be an object')
+    for key, value in defines.items():
+        if not SAFE_MACRO.fullmatch(key) or type(value) is not int:
+            raise ValueError('manifest defines require safe macro names and integer values')
+    return manifest, sources
+
+
+def archive_allowed(path, archive_root, drivers):
+    component = path.relative_to(archive_root).parts[0]
+    return (component not in EXCLUDED_COMPONENTS
+            and all(component != c and path.name != 'lib' + c + '.a'
+                    for d, c in DRIVER_COMPONENTS.items() if d not in drivers))
+
+
+def validate_binding(symbols_with_sizes, data_address, data):
+    match = re.search(r'^([0-9a-fA-F]+)\s+([0-9a-fA-F]+)\s+([A-Za-z])\s+module_base_binding$',
+                      symbols_with_sizes, re.M)
+    if (not match or int(match[1], 16) != data_address or int(match[2], 16) < 32
+            or match[3].upper() not in ('D', 'R', 'S', 'G') or len(data) < 32):
+        raise ValueError('module_base_binding must occupy at least the first 32 initialized bytes at data address')
+
+
+def symbol_proof(symbols, base, relocs):
+    referenced = set()
+    for line in relocs.splitlines():
+        fields = line.split()
+        if len(fields) >= 5 and fields[2].startswith('R_RISCV_'):
+            referenced.add(fields[4])
+    def describe(items):
+        return {name: {'address': hex(address), 'kind': kind}
+                for name, (address, kind) in sorted(items)}
+    imported = describe((name, value) for name, value in symbols.items()
+                        if name in referenced and name in base and value[1] == 'A'
+                        and value[0] == base[name][0])
+    defined = describe((name, value) for name, value in symbols.items()
+                       if name not in base or value[0] != base[name][0])
+    return imported, defined
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--base-elf', required=True)
+    ap.add_argument('--module-manifest', help='JSON service name, sources, drivers and integer defines')
     ap.add_argument('--compile-commands', help='defaults to compile_commands.json beside base ELF')
     ap.add_argument('--text-address', required=True, type=lambda x: int(x, 0),
                     help='actual module_runtime_text_address from target status; never guessed')
@@ -55,6 +137,10 @@ def main():
                     os.environ.get('CROSS_COMPILE', 'riscv32-esp-elf-')),
                     help='tool path/name prefix (default: RISCV_TOOL_PREFIX, CROSS_COMPILE, or riscv32-esp-elf- on PATH)')
     a = ap.parse_args()
+    manifest_path = pathlib.Path(a.module_manifest).resolve() if a.module_manifest else None
+    manifest, manifest_sources = load_manifest(manifest_path) if manifest_path else (None, None)
+    drivers = manifest['drivers'] if manifest is not None else ['uart', 'spi']
+    defines = manifest['defines'] if manifest is not None else {}
     idf_path = os.environ.get('IDF_PATH')
     if not idf_path or not (pathlib.Path(idf_path) / 'tools/idf.py').is_file():
         ap.error('IDF_PATH must point to an installed ESP-IDF checkout (tools/idf.py required)')
@@ -125,6 +211,7 @@ def main():
               '-I' + str(here), '-Os', '-msmall-data-limit=0', '-mno-relax',
               '-ffreestanding', '-fno-builtin', '-fno-common',
               '-ffunction-sections', '-fdata-sections']
+    flags += [f'-D{name}={value}' for name, value in sorted(defines.items())]
     macros = run('gcc', *flags, '-dM', '-E', '-include', 'module_abi.h',
                  '-x', 'c', '/dev/null', cwd=template['directory'])
     for name, expected in (('MODULE_ABI_VERSION', ABI), ('MODULE_DRAM_SIZE', DRAM_SIZE)):
@@ -133,6 +220,8 @@ def main():
             raise ValueError(f'{name} must be {expected} in the actual IDF compile configuration')
     sources = [root / 'rom/rom.c', root / 'rom/devices.c', here / 'entry.c', here / 'business.c',
                here / 'logic/spi_diagnostic.c', here / 'platform/esp_idf_io.c']
+    if manifest_sources is not None:
+        sources = manifest_sources
     objs = []
     for n, source in enumerate(sources):
         if not source.is_file():
@@ -153,44 +242,46 @@ SECTIONS {{
 }}
 ''')
     archives = sorted(p for p in (build / 'esp-idf').rglob('*.a')
-                      if p.relative_to(build / 'esp-idf').parts[0] not in EXCLUDED_COMPONENTS)
+                      if archive_allowed(p, build / 'esp-idf', drivers))
     if not archives:
         raise ValueError('no built IDF static archives beside base ELF')
     # Console UART0 VFS can retain IDF uart APIs in the base. Never mix those
     # APIs' private p_uart_obj with the independently linked UART1 driver's
     # state. Namespace ALL public uart.c APIs and every module reference.
-    uart_archive = build / 'esp-idf/esp_driver_uart/libesp_driver_uart.a'
-    uart_names = sorted({line.split()[-1] for line in run('nm', '-g', '--defined-only', uart_archive).splitlines()
-                         if len(line.split()) == 3 and line.split()[-1].startswith('uart_')})
-    rename = work / 'uart-symbols.txt'
-    rename.write_text(''.join(name + ' business_' + name + '\n' for name in uart_names))
-    for obj in objs:
-        run('objcopy', '--redefine-syms=' + str(rename), obj)
-    namespaced_uart = work / 'libbusiness_uart.a'
-    run('objcopy', '--redefine-syms=' + str(rename), uart_archive, namespaced_uart)
-    archives = [namespaced_uart if p == uart_archive else p for p in archives]
+    if 'uart' in drivers:
+        uart_archive = build / 'esp-idf/esp_driver_uart/libesp_driver_uart.a'
+        uart_names = sorted({line.split()[-1] for line in run('nm', '-g', '--defined-only', uart_archive).splitlines()
+                             if len(line.split()) == 3 and line.split()[-1].startswith('uart_')})
+        rename = work / 'uart-symbols.txt'
+        rename.write_text(''.join(name + ' business_' + name + '\n' for name in uart_names))
+        for obj in objs:
+            run('objcopy', '--redefine-syms=' + str(rename), obj)
+        namespaced_uart = work / 'libbusiness_uart.a'
+        run('objcopy', '--redefine-syms=' + str(rename), uart_archive, namespaced_uart)
+        archives = [namespaced_uart if p == uart_archive else p for p in archives]
     # Own the entire GP-SPI driver's state, even if future bases retain an API.
     # SPI flash uses its separate resident spi_flash driver, never these APIs.
-    spi_archive = build / 'esp-idf/esp_driver_spi/libesp_driver_spi.a'
-    spi_names = sorted({line.split()[-1] for line in run('nm', '-g', '--defined-only', spi_archive).splitlines()
-                        if len(line.split()) == 3})
-    spi_rename = work / 'spi-symbols.txt'
-    spi_rename.write_text(''.join(name + ' business_' + name + '\n' for name in spi_names))
-    for obj in objs:
-        run('objcopy', '--redefine-syms=' + str(spi_rename), obj)
-    namespaced_spi = work / 'libbusiness_spi.a'
-    run('objcopy', '--redefine-syms=' + str(spi_rename), spi_archive, namespaced_spi)
-    archives = [namespaced_spi if p == spi_archive else p for p in archives]
-    # C3 GP-SPI lock needs missing 32-bit compiler atomics. Extract ONLY this
-    # stateless IDF object, never the newlib runtime/heap/locks archive as a whole.
-    atomic_obj = work / 'stdatomic.c.obj'
-    run('ar', 'x', build / 'esp-idf/newlib/libnewlib.a', 'stdatomic.c.obj', cwd=work)
-    atomic_symbols = syms(atomic_obj)
-    if any(kind.upper() in ('B', 'D', 'S', 'G', 'C') for _, kind in atomic_symbols.values()):
-        raise RuntimeError('atomic helper unexpectedly contains process-wide mutable state')
-    atomic_archive = work / 'libbusiness_atomics.a'
-    run('ar', 'rcs', atomic_archive, atomic_obj)
-    archives.append(atomic_archive)
+    if 'spi' in drivers:
+        spi_archive = build / 'esp-idf/esp_driver_spi/libesp_driver_spi.a'
+        spi_names = sorted({line.split()[-1] for line in run('nm', '-g', '--defined-only', spi_archive).splitlines()
+                            if len(line.split()) == 3})
+        spi_rename = work / 'spi-symbols.txt'
+        spi_rename.write_text(''.join(name + ' business_' + name + '\n' for name in spi_names))
+        for obj in objs:
+            run('objcopy', '--redefine-syms=' + str(spi_rename), obj)
+        namespaced_spi = work / 'libbusiness_spi.a'
+        run('objcopy', '--redefine-syms=' + str(spi_rename), spi_archive, namespaced_spi)
+        archives = [namespaced_spi if p == spi_archive else p for p in archives]
+        # C3 GP-SPI lock needs missing 32-bit compiler atomics. Extract ONLY this
+        # stateless IDF object, never the newlib runtime/heap/locks archive as a whole.
+        atomic_obj = work / 'stdatomic.c.obj'
+        run('ar', 'x', build / 'esp-idf/newlib/libnewlib.a', 'stdatomic.c.obj', cwd=work)
+        atomic_symbols = syms(atomic_obj)
+        if any(kind.upper() in ('B', 'D', 'S', 'G', 'C') for _, kind in atomic_symbols.values()):
+            raise RuntimeError('atomic helper unexpectedly contains process-wide mutable state')
+        atomic_archive = work / 'libbusiness_atomics.a'
+        run('ar', 'rcs', atomic_archive, atomic_obj)
+        archives.append(atomic_archive)
     elf = work / 'business.elf'
     # FIRST definitions are resident absolutes. Some IDF archives package many
     # API functions into one object: allow overlapping definitions, then GC the
@@ -208,11 +299,14 @@ SECTIONS {{
     spi_ownership = {name: {'address': hex(address), 'kind': kind}
                      for name, (address, kind) in symbols.items()
                      if name.startswith(('business_spi_', 'business_spicommon_', 'spi_hal_', 'spi_bus_lock_'))}
-    for name in ('spi_bus_initialize', 'spi_bus_add_device', 'spi_device_queue_trans',
-                 'spi_device_get_trans_result', 'spi_bus_remove_device', 'spi_bus_free'):
-        address, kind = symbols['business_' + name]
-        if kind.upper() != 'T' or not ta <= address < ta + 0x100000 - 4096 - 40:
-            raise RuntimeError('SPI API is not module-owned: ' + name)
+    if 'spi' in drivers:
+        for name in ('spi_bus_initialize', 'spi_bus_add_device', 'spi_device_queue_trans',
+                     'spi_device_get_trans_result', 'spi_bus_remove_device', 'spi_bus_free'):
+            address, kind = symbols['business_' + name]
+            if kind.upper() != 'T' or not ta <= address < ta + 0x100000 - 4096 - 40:
+                raise RuntimeError('SPI API is not module-owned: ' + name)
+    # GNU ld retains W/V kinds for resident weak absolutes under --just-symbols.
+    # Exact resident addresses, not kind A alone, establish non-copy ownership.
     duplicates = [name for name in symbols if name in base and symbols[name][0] != base[name][0]]
     if duplicates:
         raise RuntimeError('resident runtime/global definitions copied into module: ' + ', '.join(duplicates))
@@ -237,6 +331,8 @@ SECTIONS {{
         return path.read_bytes()
 
     text = section('text')
+    raw_data = section('data')
+    validate_binding(run('nm', '-S', '-g', '--defined-only', elf), da, raw_data)
     data = bytes.fromhex(base_hash) + section('data')[32:]
     match = re.search(r'\s\.bss\s+([0-9a-fA-F]+)\s', sections)
     bss = int(match[1], 16) if match else 0
@@ -250,7 +346,13 @@ SECTIONS {{
     out.write_bytes(image)
     link_map = (work / 'business.map').read_text()
     extracted = sorted(set(re.findall(r'([^\s]+\.a)\(([^)]+)\)', link_map)))
-    report = {'artifact': str(out), 'base_elf': str(base_elf), 'base_sha256': base_hash,
+    imported_base_symbols, module_defined_globals = symbol_proof(symbols, base, relocs)
+    report = {'manifest': str(manifest_path) if manifest_path else None,
+              'name': manifest['name'] if manifest is not None else 'business',
+              'drivers': drivers, 'defines': defines,
+              'imported_base_symbols': imported_base_symbols,
+              'module_defined_globals': module_defined_globals,
+              'artifact': str(out), 'base_elf': str(base_elf), 'base_sha256': base_hash,
               'compile_commands': str(database), 'text_address': hex(ta), 'text_bytes': len(text),
               'data_address': hex(da), 'data_bytes': len(data), 'bss_bytes': bss,
               'dram_capacity': DRAM_SIZE, 'entry': hex(entry), 'abi': ABI,

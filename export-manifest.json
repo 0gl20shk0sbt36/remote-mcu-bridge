@@ -132,15 +132,15 @@
       "path": "esp32_rom/module/build_module.py",
       "source_origin": "esp32_rom/module/build_module.py",
       "source_sha256": "2c2dc79fe5271239fbcec5c13224d2a0f6a251ccec505c1986dc5e7f0c97977c",
-      "sha256": "bf37985d244b588e6d92c92ea663708816027cea1acb6e6bca483dd4ffc67a36",
+      "sha256": "6b288ebb864ebea161d04ff9976f0d9d7089dfb03d6ecd524b2a2328f01d6ecf",
       "transformed": true
     },
     {
       "path": "esp32_rom/module/business.c",
       "source_origin": "esp32_rom/module/business.c",
       "source_sha256": "183c74b79bcfd18aa19ebc4dcf4c6117eb553b1c40931a6e32721e6aaf0bb3f2",
-      "sha256": "183c74b79bcfd18aa19ebc4dcf4c6117eb553b1c40931a6e32721e6aaf0bb3f2",
-      "transformed": false
+      "sha256": "54b1420c0e0e860c3513de94e08c88a1d8b312ce0eb8cfd559afb81d0618f63d",
+      "transformed": true
     },
     {
       "path": "esp32_rom/module/entry.c",
@@ -153,15 +153,15 @@
       "path": "esp32_rom/module/logic/spi_diagnostic.c",
       "source_origin": "esp32_rom/module/logic/spi_diagnostic.c",
       "source_sha256": "783e51cfd5d2d966cb4a5eb40cf336c923813cb596ee0035ada3f44cd16d7512",
-      "sha256": "783e51cfd5d2d966cb4a5eb40cf336c923813cb596ee0035ada3f44cd16d7512",
-      "transformed": false
+      "sha256": "7c5561e70dfdf09c3252381f0fc2cc15ffbf68f3035d12936559df9b72a19d7b",
+      "transformed": true
     },
     {
       "path": "esp32_rom/module/logic/spi_diagnostic.h",
       "source_origin": "esp32_rom/module/logic/spi_diagnostic.h",
       "source_sha256": "aecacf1c12abb3b847760422e6365a22c91a4529ca7d0d0d1931382261411955",
-      "sha256": "aecacf1c12abb3b847760422e6365a22c91a4529ca7d0d0d1931382261411955",
-      "transformed": false
+      "sha256": "e5db7fb014bb94c4b87b81d4dd2a3bd250111e800487543d132557942f4d1df2",
+      "transformed": true
     },
     {
       "path": "esp32_rom/module/platform/board_config.h",
@@ -174,15 +174,15 @@
       "path": "esp32_rom/module/platform/esp_idf_io.c",
       "source_origin": "esp32_rom/module/platform/esp_idf_io.c",
       "source_sha256": "33c5feab6b33f504e766242e4d4079ed930144e81f2889ee28661c695dfb235d",
-      "sha256": "33c5feab6b33f504e766242e4d4079ed930144e81f2889ee28661c695dfb235d",
-      "transformed": false
+      "sha256": "02bc614d49ae2f75a210fc710f6749b4e259f8e6098da4aed04604969fc5801a",
+      "transformed": true
     },
     {
       "path": "esp32_rom/module/platform/esp_idf_io.h",
       "source_origin": "esp32_rom/module/platform/esp_idf_io.h",
       "source_sha256": "9e79d07b9a2193c0c6a23362c60d6e39cdf00f727716dfab8ea72e2c7c30597a",
-      "sha256": "9e79d07b9a2193c0c6a23362c60d6e39cdf00f727716dfab8ea72e2c7c30597a",
-      "transformed": false
+      "sha256": "cacd3557d3b4dd0af20b4632fd30d9153cd18a0a738451d1089eed1e92dc0a41",
+      "transformed": true
     },
     {
       "path": "esp32_rom/partitions.csv",
@@ -223,8 +223,8 @@
       "path": "esp32_rom/tests/test_spi_backend.py",
       "source_origin": "esp32_rom/tests/test_spi_backend.py",
       "source_sha256": "6dcfa5977ba7b0038de9f558c0ec63289e57f4a765d5fdb181f85a5083846836",
-      "sha256": "6dcfa5977ba7b0038de9f558c0ec63289e57f4a765d5fdb181f85a5083846836",
-      "transformed": false
+      "sha256": "7613dad980d092d50d939edc61764c4c64cdc2f8766aa23695d0806e883f0457",
+      "transformed": true
     },
     {
       "path": "esp32_rom/tests/test_spi_module.py",
@@ -237,8 +237,8 @@
       "path": "esp32_rom/tests/test_spi_workflow.c",
       "source_origin": "esp32_rom/tests/test_spi_workflow.c",
       "source_sha256": "b1b0767e83fe5d4e90e0a87a670a66f4b96bc387bd5978ae81bfb5363a18c8ad",
-      "sha256": "b1b0767e83fe5d4e90e0a87a670a66f4b96bc387bd5978ae81bfb5363a18c8ad",
-      "transformed": false
+      "sha256": "5ba691460cae5567c07c01ee888ae8864f3c66f27c5397b538c004a0411b2b5a",
+      "transformed": true
     },
     {
       "path": "esp32_rom/tests/test_streams.py",

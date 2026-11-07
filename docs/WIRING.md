@@ -37,7 +37,7 @@ STM32 的 **PB2 / BOOT1 必须保持低电平**，可使用板上 BOOT1 低电�
 
 配置：Mode 0（CPOL=0、CPHA=0）、MSB first、8 bit、每次 CS 选中传输 64 字节。首次重新连接从 **100 kHz** 开始；接线尽量短，避免悬空和松动。
 
-历史 v18/v19 已做过 100 kHz、500 kHz、1 MHz 各 100 次双向 64 字节校验；**这不是本轮重构版或重新接线后的实机验证**。新版本的状态以仓库验证报告为准。
+2026-11-07 已在重构后底座、独立业务模块和重新接线的设备上复测：100 kHz、500 kHz、1 MHz 各 100 次双向 64 字节校验全部通过。中途曾出现 MISO 接收全 FF，重新插紧 PA6↔GPIO0 后，在不再改软件或复位的情况下恢复；仍需留意杜邦线接触。这只是前后观察，**历史唯一根因尚未坐实，不能据此排除代码或 NSS/输出状态问题**；深入对照见 [SPI 调查](SPI_INVESTIGATION.md)。结果见 [实机记录](validation/hardware-20261107.json)。
 
 ### 3. 供电与恢复顺序
 
@@ -46,7 +46,7 @@ STM32 的 **PB2 / BOOT1 必须保持低电平**，可使用板上 BOOT1 低电�
 3. 确认 BOOT1 低、BOOT0 无硬短接、NRST 可正常释放，最后上电。
 4. 先确认 ESP 独立管理服务可用，再测试 STM32 ROM `probe`；不要一上电就直接擦写 Flash。
 5. SPI 测试前需要 STM32 已运行匹配的 SPI 从机诊断应用。只接好线不等于从机固件已经存在；如果使用 SRAM 版，STM32 断电或复位后须重新加载，Flash 原有应用不会自动变成 SRAM 诊断应用。
-6. 本轮板线已拆，软件工作只做本地检查/构建，**不自动连接、刷板或宣称新版本实机通过**。
+6. 2026-11-07 用户重新接线并授权操作后，已通过笔记本串口更新 ESP 底座，再通过 Wi-Fi 更新业务和测试 STM32。将来的烧写仍须明确授权；当前运行的 STM32 SPI 诊断应用在 SRAM 中，掉电或复位后须重载。
 
 ### 4. 对应源码与公开范围
 
@@ -86,7 +86,7 @@ Keep all required wires: SPI diagnostics also use UART ARM / READY / DONE handsh
 | GPIO0 / MISO | ← | PA6 / MISO |
 | GPIO10 / CS | → | PA4 / active-low NSS |
 
-Use mode 0, MSB first, 8-bit words and one uninterrupted 64-byte transaction per CS assertion. Start reconnection testing at 100 kHz and keep wires short. Historical v18/v19 hardware tests covered 100 bidirectional 64-byte transactions at each of 100 kHz, 500 kHz and 1 MHz; that does **not** validate the new refactor or rewired hardware.
+Use mode 0, MSB first, 8-bit words and one uninterrupted 64-byte transaction per CS assertion. Start reconnection testing at 100 kHz and keep wires short. On 2026-11-07, the refactored resident and independent business module passed 100 bidirectional 64-byte transactions at each of 100 kHz, 500 kHz and 1 MHz on the rewired hardware. An all-FF MISO reception fault disappeared after reseating PA6↔GPIO0 without further software changes or resets. This correlation does not establish the historical unique root cause or rule out software/NSS/output-state issues; see `docs/SPI_INVESTIGATION.md`. Keep connections secure; see the hardware report in `docs/validation/hardware-20261107.json`.
 
 ### Power and recovery
 
@@ -94,4 +94,4 @@ Wire with both boards unpowered, verify mapping and logic levels, connect common
 
 Check management connectivity and a non-destructive STM32 ROM probe before programming Flash. SPI requires a matching slave diagnostic application already running; an SRAM-loaded application must be reloaded after STM32 reset or power loss. Wiring alone does not install it.
 
-The boards are disconnected during this software revision: no automatic connection, flashing or new hardware-pass claim is made. GPIO mapping is defined in `esp32_rom/module/platform/board_config.h`, implemented by `esp32_rom/module/platform/esp_idf_io.c`, and described by `boards/esp32c3-stm32f103/board.json`. The public repository omits the previous user's CubeMX project and generated files with unclear licensing; it does not include a complete buildable STM32 SPI-slave firmware image.
+After the user reconnected the boards and explicitly authorized access on 2026-11-07, the ESP resident was updated over the laptop serial port and the business module and STM32 were tested over Wi-Fi. Future flashing still requires authorization. The currently running STM32 SPI application is SRAM-resident and must be reloaded after reset or power loss. GPIO mapping is defined in `esp32_rom/module/platform/board_config.h`, implemented by `esp32_rom/module/platform/esp_idf_io.c`, and described by `boards/esp32c3-stm32f103/board.json`. The public repository omits the previous user's CubeMX project and generated files with unclear licensing; it does not include a complete buildable STM32 SPI-slave firmware image.

@@ -1,0 +1,10 @@
+{
+  "name": "hello-B",
+  "sources": [
+    "service.c"
+  ],
+  "drivers": [],
+  "defines": {
+    "SERVICE_VARIANT": 2
+  }
+}

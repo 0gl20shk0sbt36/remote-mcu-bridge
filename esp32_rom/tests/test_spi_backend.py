@@ -8,6 +8,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT / 'module/platform/esp_idf_io.c').read_text()
 spi = source[source.index('static spi_device_handle_t'):source.index('esp_err_t esp_io_uart_mode(')]
+header = (ROOT / 'module/platform/esp_idf_io.h').read_text()
+pad_types = header[header.index('typedef struct {'):header.index('void esp_io_spi_pad_snapshot_get')]
 stubs = r'''
 #include <assert.h>
 #include <stdbool.h>
@@ -50,6 +52,25 @@ static int spi_device_get_trans_result(spi_device_handle_t h,spi_transaction_t *
 static int spi_bus_remove_device(spi_device_handle_t h){assert(h==(void*)1);remove_calls++;return remove_rc;}
 static int spi_bus_free(int host){assert(host==2);free_calls++;return free_rc;}
 '''
+stubs += pad_types + r'''
+typedef struct {uint64_t pin_bit_mask;int mode,pull_up_en,pull_down_en,intr_type;} gpio_config_t;
+#define GPIO_MODE_INPUT 1
+#define GPIO_INTR_DISABLE 0
+#define IO_MUX_GPIO0_REG 100
+#define GPIO_FUNC0_IN_SEL_CFG_REG 200
+#define FSPIQ_IN_IDX 64
+static unsigned gpio_calls, delays;
+static int pad_value, gpio_rc;
+static uint32_t iomux_reg, matrix_reg;
+#define REG_READ(addr) ((addr)==IO_MUX_GPIO0_REG?iomux_reg:matrix_reg)
+static int gpio_get_level(int pin) {assert(pin==0);return pad_value;}
+static int gpio_config(const gpio_config_t *c) {
+ assert(c->pin_bit_mask==1 && c->mode==GPIO_MODE_INPUT && c->intr_type==0);
+ assert(!(c->pull_up_en && c->pull_down_en));
+ gpio_calls++;iomux_reg=512+(c->pull_up_en?256:0)+(c->pull_down_en?128:0);return gpio_rc;
+}
+static void vTaskDelay(int ticks) {assert(ticks>=1);delays++;}
+'''
 tests = r'''
 static void reset(void) {
  assert(!esp_io_spi_busy());init_rc=add_rc=queue_rc=result_rc=remove_rc=free_rc=0;
@@ -57,6 +78,19 @@ static void reset(void) {
 }
 int main(void) {
  const char *error;uint8_t tx[64]={1},rx[64]={0};
+ esp_io_spi_pad_result pad;
+ assert(esp_io_spi_pad_sample(3,&pad)==ESP_ERR_INVALID_ARG);
+ assert(esp_io_spi_pad_sample(0,NULL)==ESP_ERR_INVALID_ARG);
+ for(unsigned pull=0;pull<3;pull++) for(int level=0;level<2;level++) {
+  pad_value=level;unsigned old=gpio_calls;delays=0;
+  assert(!esp_io_spi_pad_sample(pull,&pad));
+  assert(pad.high==(level?16:0) && pad.low==(level?0:16));
+  assert(delays==16 && gpio_calls==old+2 && pad.restored.iomux==512);
+ }
+ spi_pending=true;unsigned old=gpio_calls;
+ assert(esp_io_spi_pad_sample(0,&pad)==ESP_ERR_INVALID_STATE && gpio_calls==old);
+ spi_pending=false;
+
  reset();assert(!esp_io_spi_open(100000,&error));assert(!esp_io_spi_transfer(tx,rx,&error));assert(rx[0]==0x5a&&rx[63]==0x5a);assert(queued->tx_buffer!=tx&&queued->rx_buffer!=rx);assert(!esp_io_spi_close()&&!esp_io_spi_busy());
  reset();init_rc=10;assert(esp_io_spi_open(100000,&error)==10);assert(!esp_io_spi_close()&&!free_calls);
  reset();add_rc=11;assert(esp_io_spi_open(100000,&error)==11&&esp_io_spi_busy());assert(!esp_io_spi_close()&&free_calls==1&&!remove_calls);

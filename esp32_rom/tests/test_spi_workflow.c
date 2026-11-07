@@ -4,7 +4,7 @@
 #include <string.h>
 #include <limits.h>
 typedef struct {int mode,phase,opens,closes,acquires,releases,xfers,progress;bool owned,bus;uint32_t seq;int64_t now;} fake;
-enum {SUCCESS,WRONG_DATA,WRONG_SEQ,READY_ERR,DONE_ERR,READY_TIMEOUT,DONE_TIMEOUT,OPEN_FAIL,XFER_FAIL,CLEAN_FAIL,DEADLINE,BUSY,PREP_FAIL,ARM_FAIL,READ_FAIL,PRIOR_BUSY};
+enum {SUCCESS,WRONG_DATA,WRONG_SEQ,READY_ERR,DONE_ERR,READY_TIMEOUT,DONE_TIMEOUT,OPEN_FAIL,XFER_FAIL,CLEAN_FAIL,DEADLINE,BUSY,PREP_FAIL,ARM_FAIL,READ_FAIL,PRIOR_BUSY,ALL_FF,ALL_ZERO,LATE_MISMATCH,WRONG_DATA_DONE_ERR};
 static int64_t now(void *p) {return ((fake*)p)->now;}
 static void progress(void *p) {((fake*)p)->progress++;}
 static int open_bus(void *p,uint32_t hz,const char **err) {fake*f=p;assert(hz>=100000&&hz<=1000000);f->opens++;if(f->mode==OPEN_FAIL){*err="spi_bus_add_device";f->bus=true;return 17;}f->bus=true;if(f->mode==DEADLINE)f->now+=300000000;return 0;}
@@ -19,10 +19,10 @@ static int read_line(void *p,char *line,size_t n,int64_t deadline) {
  if(f->mode==READ_FAIL)return -1;
  if((f->mode==READY_TIMEOUT&&!done)||(f->mode==DONE_TIMEOUT&&done)){f->now=deadline;return 0;}
  if(f->mode==WRONG_SEQ){snprintf(line,n,"SPI READY %lu",(unsigned long)(f->seq+1));f->now+=250000;return 1;}
- if((f->mode==READY_ERR&&!done)||(f->mode==DONE_ERR&&done)){snprintf(line,n,"SPI DONE %lu ERR DATA i=7 got=0 expected=49",(unsigned long)f->seq);return 1;}
+ if((f->mode==READY_ERR&&!done)||((f->mode==DONE_ERR||f->mode==WRONG_DATA_DONE_ERR)&&done)){snprintf(line,n,"SPI DONE %lu ERR DATA i=7 got=0 expected=49",(unsigned long)f->seq);return 1;}
  snprintf(line,n,done?"SPI DONE %lu OK":"SPI READY %lu",(unsigned long)f->seq);f->now+=100;return 1;
 }
-static int transfer(void *p,const uint8_t tx[64],uint8_t rx[64],const char **err) {fake*f=p;assert(f->owned);f->xfers++;for(unsigned i=0;i<64;i++){assert(tx[i]==(uint8_t)(f->seq+i));rx[i]=(uint8_t)(f->seq^0xa5U^i);}if(f->mode==WRONG_DATA)rx[7]^=1;if(f->mode==XFER_FAIL){*err="SPI completion timeout/error";return 19;}return 0;}
+static int transfer(void *p,const uint8_t tx[64],uint8_t rx[64],const char **err) {fake*f=p;assert(f->owned);f->xfers++;for(unsigned i=0;i<64;i++){assert(tx[i]==(uint8_t)(f->seq+i));rx[i]=(uint8_t)(f->seq^0xa5U^i);}if(f->mode==WRONG_DATA||f->mode==WRONG_DATA_DONE_ERR)rx[7]^=1;if(f->mode==ALL_FF)memset(rx,255,64);if(f->mode==ALL_ZERO)memset(rx,0,64);if(f->mode==LATE_MISMATCH)rx[63]^=1;if(f->mode==XFER_FAIL){*err="SPI completion timeout/error";return 19;}return 0;}
 static spi_diagnostic_result run(fake *f,uint32_t count,uint32_t hz,uint32_t *seq) {
  spi_diagnostic_io io={f,now,progress,open_bus,transfer,close_bus,busy,acquire,release,prepare,arm,read_line};spi_diagnostic_result r;spi_diagnostic_run(&io,count,hz,seq,&r);assert(!f->owned);assert(f->releases==f->acquires-(f->mode==BUSY?1:0));return r;
 }
@@ -44,5 +44,17 @@ int main(void) {
  const uint32_t invalid[][2]={{0,100000},{101,100000},{1,99999},{1,1000001},{UINT_MAX,UINT_MAX}};
  for(unsigned i=0;i<sizeof invalid/sizeof*invalid;i++){fake f={0};uint32_t seq=1;spi_diagnostic_result r=run(&f,invalid[i][0],invalid[i][1],&seq);assert(!r.ok&&!f.opens&&!f.closes&&seq==1);}
  for(unsigned hz=100000;hz<=1000000;hz+=450000){fake f={0};uint32_t seq=UINT_MAX;spi_diagnostic_result r=run(&f,100,hz,&seq);assert(r.ok&&r.completed==100&&seq==100&&r.last_seq==99&&r.deadline_ms==255000);}
- puts("PASS actual portable SPI workflow: 16 success/failure modes, 5 invalid bounds, 3x100 transfers, sequence wrap, exact data/counters, deadlines and balanced ownership");
+ for(int mode=ALL_FF;mode<=WRONG_DATA_DONE_ERR;mode++) {
+  fake f={.mode=mode};uint32_t seq=101;spi_diagnostic_result r=run(&f,2,500000,&seq);
+  assert(!r.ok&&r.rx_failure_captured&&r.rx_failure_seq==101&&f.xfers==1);
+  assert(strlen(r.rx_first16_hex)==32&&strlen(r.expected_first16_hex)==32);
+  assert(!strcmp(r.expected_first16_hex,"c0c1c2c3c4c5c6c7c8c9cacbcccdcecf"));
+  if(mode==ALL_FF)assert(r.rx_constant&&r.rx_min==255&&r.rx_max==255&&r.rx_mismatch_bytes==63&&r.first_mismatch_index==0&&r.first_mismatch_actual==255&&r.first_mismatch_expected==192&&!strcmp(r.rx_first16_hex,"ffffffffffffffffffffffffffffffff"));
+  if(mode==ALL_ZERO)assert(r.rx_constant&&r.rx_min==0&&r.rx_max==0&&r.rx_mismatch_bytes==64&&!strcmp(r.rx_first16_hex,"00000000000000000000000000000000"));
+  if(mode==LATE_MISMATCH)assert(!r.rx_constant&&r.first_mismatch_index==63&&r.first_mismatch_actual==254&&r.first_mismatch_expected==255&&r.rx_min==192&&r.rx_max==254&&!strcmp(r.rx_first16_hex,r.expected_first16_hex));
+  if(mode==WRONG_DATA_DONE_ERR)assert(!r.rx_constant&&r.first_mismatch_index==7&&r.first_mismatch_actual==198&&r.first_mismatch_expected==199&&!r.stm_rx_verified&&!strcmp(r.error,"STM RX verification ERR"));
+ }
+ {fake f={0};uint32_t seq=1;spi_diagnostic_result r=run(&f,1,100000,&seq);assert(!r.rx_failure_captured&&!r.rx_first16_hex[0]&&!r.expected_first16_hex[0]);}
+ {fake f={.mode=ALL_FF};uint32_t seq=1;spi_diagnostic_result r=run(&f,1,500000,&seq);assert(r.rx_failure_captured&&r.rx_mismatch_bytes==64&&r.rx_constant&&r.first_mismatch_index==0&&r.first_mismatch_expected==164);}
+ puts("PASS actual portable SPI workflow: existing success/failure/bounds/ownership cases plus all-FF 63/64 mismatches, all-zero, late mismatch, DONE error evidence preservation and absent evidence on success");
 }

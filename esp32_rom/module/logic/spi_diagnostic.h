@@ -26,6 +26,13 @@ typedef struct {
  int rc,cleanup_rc;
  uint32_t last_seq;
  unsigned completed,esp_rx_verified,stm_rx_verified,rx_mismatch_bytes;
+ /* First mismatching completed transfer only; independent of UART DONE.
+  * ESP driver RX bytes, not remote pad/electrical measurements. */
+ bool rx_failure_captured,rx_constant;
+ uint32_t rx_failure_seq;
+ char rx_first16_hex[33],expected_first16_hex[33];
+ unsigned first_mismatch_index,first_mismatch_actual,first_mismatch_expected;
+ unsigned rx_min,rx_max;
  int64_t elapsed_ms,deadline_ms;
 } spi_diagnostic_result;
 bool spi_parameters_valid(uint32_t count,uint32_t hz);

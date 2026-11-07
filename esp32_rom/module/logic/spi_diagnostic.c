@@ -59,6 +59,26 @@ void spi_diagnostic_run(const spi_diagnostic_io *io,uint32_t count,uint32_t hz,
   if(r->rc) break;
   for(unsigned i=0;i<64;i++) if(rx[i]!=expected[i]) r->rx_mismatch_bytes++;
   bool rx_ok=!memcmp(rx,expected,64);
+  if(!rx_ok && !r->rx_failure_captured) {
+   static const char hex[]="0123456789abcdef";
+   r->rx_failure_captured=true;r->rx_failure_seq=r->last_seq;
+   r->rx_min=255;r->rx_max=0;r->first_mismatch_index=64;
+   for(unsigned i=0;i<64;i++) {
+    if(rx[i]<r->rx_min) r->rx_min=rx[i];
+    if(rx[i]>r->rx_max) r->rx_max=rx[i];
+    if(rx[i]!=expected[i] && r->first_mismatch_index==64) {
+     r->first_mismatch_index=i;r->first_mismatch_actual=rx[i];
+     r->first_mismatch_expected=expected[i];
+    }
+    if(i<16) {
+     r->rx_first16_hex[2*i]=hex[rx[i]>>4];
+     r->rx_first16_hex[2*i+1]=hex[rx[i]&15];
+     r->expected_first16_hex[2*i]=hex[expected[i]>>4];
+     r->expected_first16_hex[2*i+1]=hex[expected[i]&15];
+    }
+   }
+   r->rx_constant=r->rx_min==r->rx_max;
+  }
   if(rx_ok) r->esp_rx_verified++;
   r->stage="uart-done";line=wait_line(io,r->last_seq,true,deadline);
   if(line==1) r->stm_rx_verified++;

@@ -4,7 +4,7 @@
 
 ### 本地执行结果（2026-11-07）
 
-- 整理后的源码正本：**19/19 CTest 通过**，包含原工程除 `apps_f103` 外的 15 项适用主机测试，以及注册表、客户端、发现和 probe 四项。最后完整运行在客户端竞争修复后执行。
+- 整理后的源码正本：**22/22 CTest 通过**，包含原工程适用测试、注册表、客户端、发现、probe、SPI 原始数据/采样接口及最小服务 A/B 的原生检查。最后完整运行在新增深度诊断与服务清单支持后执行。
 - 更新核心的严格 GCC / ASan / UBSan 检查通过：270 个场景、225765 次断言、179 次注入故障；覆盖回读错误、部分擦写、分片、对齐、不可变启动许可和提交失败。模拟摘要只测试回调/范围/比较，不冒充密码学实现验证。
 - 修复存储回调返回 `BRIDGE_E_STATE` 时被误当作标记内容不匹配的问题；现在回调状态和读取结果分开，任何回读错误都不能授予更新或执行许可。
 - 客户端完整套件 17/17 通过；正常关闭及早期握手中断两个 Ctrl-C 场景各重复 50 次，共 100/100 通过。
@@ -13,7 +13,7 @@
 - 业务模块对启用版底座 ELF 的真实独立链接、镜像头和精确底座哈希绑定检查通过；无未解析符号、无重复底座定义。链接检查使用合成取指地址，产物明确标记 **NOT DEPLOYABLE**，不是可烧录或已运行的业务模块。
 - 私有工作树的生产配置底座也已重新构建。生产凭据、固件及旧开发历史不进入这份干净源码仓库。
 
-**没有连接或操作板子，没有新版本实机回归，也没有真实写入中途断电验证。GitHub 发布与远程 CI 按用户要求暂停。** 历史版本的实机结果不能代替本轮验证。
+**后续用户重新连线并授权后，已完成新底座实机回归**：串口刷写校验、绑定新底座的模块更新、正常启动拒绝覆写、半包上传后重启恢复、真实模块入口死循环的看门狗复位及 Wi-Fi 修复、STM32 Flash/SRAM 编程、UART PONG/心跳全部通过。SPI 100 kHz / 500 kHz / 1 MHz 各 100 次双向 64 字节校验零错。曾出现 MISO 全 FF，重插 PA6↔GPIO0 后不改软件、不复位即恢复。见 [实机记录](validation/hardware-20261107.json)。**真实写入中途突然断电仍未测试，GitHub 发布与远程 CI 继续暂停。**
 
 ### 原生复现
 
@@ -48,7 +48,7 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 
 ### Local results (2026-11-07)
 
-- The clean source tree passed **19/19 CTest entries after the client-race fix**: 15 applicable original host fixtures (excluding `apps_f103`), plus registry, client, discovery and probe tests.
+- The clean source tree passed **22/22 CTest entries after the deep SPI diagnostics and service-manifest extension**, including applicable original host fixtures, registry/client/discovery/probe checks, SPI report/pad request tests and native hello A/B checks.
 - Strict GCC / ASan / UBSan checks passed for the update core: 270 scenarios, 225765 assertions and 179 injected failures. The mock digest tests callback ranges and comparisons, not cryptographic correctness.
 - Fixed a fail-closed bug where a storage callback returning `BRIDGE_E_STATE` was confused with an observed footer mismatch. Callback failures now deny both update and execution permission.
 - All 17 client tests passed; the normal-close and early-handshake Ctrl-C cases each passed 50 repetitions (100/100 total).
@@ -57,7 +57,7 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 - The business module completed a real independent link against the enabled resident ELF; header and exact base-hash binding validation passed, with no undefined symbols or duplicate resident definitions. The check uses a synthetic instruction address: its outputs are explicitly **NOT DEPLOYABLE**, not runtime validation.
 - The private production-configured resident was also rebuilt. Production credentials, firmware and old development history are excluded from this clean source repository.
 
-**No board connection, flashing, new hardware regression, or physical mid-write power cut was performed. Publication and remote CI are paused at the user's request.** Historical hardware results do not validate this revision.
+**After the user rewired the boards and authorized access, hardware regression passed**: verified serial resident flashing, exact-base-bound module updates, normal-boot overwrite rejection, interrupted-upload reboot recovery, a genuinely looping module entry followed by watchdog reset and Wi-Fi repair, STM32 Flash/SRAM programming, and UART PONG/heartbeat. SPI passed 100 bidirectional 64-byte transfers at each of 100 kHz, 500 kHz and 1 MHz. An all-FF MISO fault disappeared after reseating PA6↔GPIO0 without further software changes or resets. See [hardware evidence](validation/hardware-20261107.json). **Physical mid-write power loss remains untested; publication and remote CI remain paused.**
 
 ### Reproduction and limits
 

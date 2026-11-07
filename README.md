@@ -86,6 +86,7 @@ python3 tools/module_ctl.py --help
 ### 文档、贡献与许可证
 
 - [本地验证结果与边界](docs/TESTING.md)
+- [服务 A/B 实测与耦合评估](docs/SERVICE_AUTHORING.md) · [SPI 全 FF 深度调查](docs/SPI_INVESTIGATION.md)
 - [接线与 SRAM 限制](docs/WIRING.md) · [模块构建](docs/MODULE_BUILD.md) · [文档索引](docs/README.md) · [后端移植](docs/BACKEND_PORTING.md)
 - [贡献指南](CONTRIBUTING.md) · [安全政策](SECURITY.md)
 - [MIT 许可证](LICENSE)，Copyright (c) 2026 Remote MCU Bridge contributors。外部 SDK 和第三方组件仍适用各自许可证。
@@ -178,6 +179,7 @@ python3 tools/module_ctl.py --help
 ### Documentation, contributing, and license
 
 - [Local verification and limits](docs/TESTING.md)
+- [Service A/B and coupling assessment](docs/SERVICE_AUTHORING.md) · [SPI all-FF investigation](docs/SPI_INVESTIGATION.md)
 - [Wiring and SRAM limits](docs/WIRING.md) · [Module builds](docs/MODULE_BUILD.md) · [Documentation index](docs/README.md) · [Backend porting](docs/BACKEND_PORTING.md)
 - [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
 - [MIT license](LICENSE), Copyright (c) 2026 Remote MCU Bridge contributors. External SDKs and third-party components retain their own licenses.

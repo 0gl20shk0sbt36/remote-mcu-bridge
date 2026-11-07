@@ -378,18 +378,55 @@ static int spi_read_line(void *ctx,char *line,size_t capacity,int64_t deadline) 
  }
  return 0;
 }
+static void spi_pad_sample(int fd, unsigned pull) {
+    if (!control_acquire()) { failure(fd,"UART busy"); return; }
+    esp_io_spi_pad_result r = {0};
+    int rc = esp_io_spi_pad_sample(pull, &r);
+    control_release();
+    if (rc == ESP_ERR_INVALID_STATE) {failure(fd,"SPI bus/device/pending active; no GPIO changes");return;}
+    char report[1000];
+    snprintf(report,sizeof report,
+        "{\"ok\":%s,\"op\":\"spi-pad-sample\",\"rc\":%d,\"gpio\":0,\"scope\":\"ESP local digital pad input; not analog or remote STM32\",\"pull\":\"%s\",\"samples\":%u,\"low\":%u,\"high\":%u,\"spacing\":\"at least 1 RTOS tick, requested 1ms\",\"before_level\":%d,\"before_iomux\":%lu,\"sample_iomux\":%lu,\"fspiq_matrix\":%lu,\"matrix_source\":%lu,\"matrix_selected\":%s,\"matrix_inverted\":%s,\"restored_iomux\":%lu,\"restore_policy\":\"input-only no-pull; inspect rc and restored_iomux\"}\n",
+        rc==ESP_OK?"true":"false",rc,pull==1?"up":pull==2?"down":"none",
+        r.low+r.high,r.low,r.high,r.before.level,(unsigned long)r.before.iomux,
+        (unsigned long)r.sampled.iomux,(unsigned long)r.sampled.matrix,
+        (unsigned long)(r.sampled.matrix&31),r.sampled.matrix&64?"true":"false",
+        r.sampled.matrix&32?"true":"false",(unsigned long)r.restored.iomux);
+    reply(fd,report);
+}
+
 static void spi_test(int fd,uint32_t count,uint32_t hz) {
  const spi_diagnostic_io io={.now_us=spi_now,.progress=spi_progress,.open=spi_open,
   .transfer=spi_transfer,.close=spi_close,.busy=spi_busy,.acquire=spi_acquire,
   .release=spi_release,.prepare=spi_prepare,.arm=spi_arm,.read_line=spi_read_line};
  spi_diagnostic_result r;spi_diagnostic_run(&io,count,hz,&spi_test_seq,&r);
-    char report[720];
+    char report[2200];
     snprintf(report,sizeof report,
         "{\"ok\":%s,\"op\":\"spi-test\",\"stage\":\"%s\",\"error\":\"%s\",\"rc\":%d,\"cleanup_rc\":%d,\"count\":%lu,\"completed\":%u,\"hz\":%lu,\"last_seq\":%lu,\"bytes_per_transaction\":64,\"esp_rx_verified\":%u,\"stm_rx_verified\":%u,\"rx_mismatch_bytes\":%u,\"elapsed_ms\":%lld,\"deadline_ms\":%lld,\"spi_host\":2,\"dma\":false}\n",
         r.ok?"true":"false",r.stage,r.error,r.rc,r.cleanup_rc,(unsigned long)count,r.completed,
         (unsigned long)hz,(unsigned long)r.last_seq,r.esp_rx_verified,r.stm_rx_verified,r.rx_mismatch_bytes,
         (long long)r.elapsed_ms,(long long)r.deadline_ms);
-    reply(fd,report);
+        /* Bounded evidence does not change result/STM error semantics. */
+        size_t report_len=strlen(report);
+        if(report_len>=2) snprintf(report+report_len-2,sizeof(report)-report_len+2,
+        ",\"rx_failure_captured\":%s,\"rx_failure_seq\":%lu,\"rx_first16_hex\":\"%s\",\"expected_first16_hex\":\"%s\",\"first_mismatch_index\":%d,\"first_mismatch_actual\":%d,\"first_mismatch_expected\":%d,\"rx_min\":%d,\"rx_max\":%d,\"rx_constant\":%s,\"rx_scope\":\"ESP driver RX bytes, not remote pad measurement\"}\n",
+        r.rx_failure_captured?"true":"false",(unsigned long)r.rx_failure_seq,
+        r.rx_first16_hex,r.expected_first16_hex,
+        r.rx_failure_captured?(int)r.first_mismatch_index:-1,
+        r.rx_failure_captured?(int)r.first_mismatch_actual:-1,
+        r.rx_failure_captured?(int)r.first_mismatch_expected:-1,
+        r.rx_failure_captured?(int)r.rx_min:-1,r.rx_failure_captured?(int)r.rx_max:-1,
+        r.rx_constant?"true":"false");
+        esp_io_spi_pad_snapshot before, during;
+        esp_io_spi_pad_evidence(&before,&during);
+        report_len=strlen(report);
+        if(report_len>=2) snprintf(report+report_len-2,sizeof(report)-report_len+2,
+          ",\"pad_scope\":\"ESP digital snapshot before init / before last transfer, not waveform\",\"pad_before_level\":%d,\"pad_before_iomux\":%lu,\"pad_before_matrix\":%lu,\"pad_during_level\":%d,\"pad_during_iomux\":%lu,\"pad_during_matrix\":%lu,\"pad_during_matrix_source\":%lu,\"pad_during_matrix_selected\":%s,\"pad_during_matrix_inverted\":%s}\n",
+          before.level,(unsigned long)before.iomux,(unsigned long)before.matrix,
+          during.level,(unsigned long)during.iomux,(unsigned long)during.matrix,
+          (unsigned long)(during.matrix&31),during.matrix&64?"true":"false",
+          during.matrix&32?"true":"false");
+        reply(fd,report);
 }
 
 static int source_read(void *ctx, uint32_t offset, uint8_t *data, size_t length) {
@@ -421,7 +458,8 @@ static void serve(int fd, bool *owned) {
     cJSON_ArrayForEach(item, request) {
         unsigned bit = !strcmp(item->string, "token") ? 1 : !strcmp(item->string, "op") ? 2 :
                        !strcmp(item->string, "size") ? 4 : !strcmp(item->string, "crc32") ? 8 :
-                       !strcmp(item->string, "count") ? 16 : !strcmp(item->string, "hz") ? 32 : 0;
+                       !strcmp(item->string, "count") ? 16 : !strcmp(item->string, "hz") ? 32 :
+                       !strcmp(item->string, "pull") ? 64 : 0;
         if (!bit || (seen & bit)) valid = false;
         seen |= bit;
     }
@@ -439,6 +477,24 @@ static void serve(int fd, bool *owned) {
                  .reset = target_reset, .sleep_ms = target_sleep};
     if(strcmp(op->valuestring,"spi-test") && (seen & 48)) {
         cJSON_Delete(request);failure(fd,"count/hz are spi-test only");return;
+    }
+    if ((seen & 64) && strcmp(op->valuestring,"spi-pad-sample")) {
+        cJSON_Delete(request);failure(fd,"pull is spi-pad-sample only");return;
+    }
+    if (!strcmp(op->valuestring,"spi-pad-sample")) {
+        cJSON *pull = cJSON_GetObjectItemCaseSensitive(request,"pull");
+        unsigned mode = 0;
+        bool parameters = (seen == 3 || seen == 67);
+        if (seen & 64) {
+            parameters = parameters && cJSON_IsString(pull);
+            if (parameters && !strcmp(pull->valuestring,"up")) mode=1;
+            else if (parameters && !strcmp(pull->valuestring,"down")) mode=2;
+            else if (!parameters || strcmp(pull->valuestring,"none")) parameters=false;
+        }
+        cJSON_Delete(request);
+        if (!parameters) {failure(fd,"spi-pad-sample accepts only optional pull none/up/down");return;}
+        if (supervisor_fault || !module_runtime_ready()) {failure(fd,"business module unavailable");return;}
+        spi_pad_sample(fd,mode);return;
     }
     if (!strcmp(op->valuestring, "status")) {
         ESP_LOGI(TAG, "Operation received: status");

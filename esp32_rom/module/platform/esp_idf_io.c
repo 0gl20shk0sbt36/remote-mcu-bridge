@@ -5,6 +5,10 @@
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "soc/uart_reg.h"
+#include "soc/gpio_reg.h"
+#include "soc/gpio_sig_map.h"
+#include "soc/io_mux_reg.h"
+#include "freertos/task.h"
 
 static spi_device_handle_t spi_device;
 static bool spi_bus;
@@ -15,7 +19,44 @@ static spi_transaction_t spi_transaction;
 static uint8_t spi_tx[64], spi_rx[64];
 
 bool esp_io_spi_busy(void) {
-    return spi_bus || spi_device != NULL;
+    return spi_bus || spi_device != NULL || spi_pending;
+}
+
+static esp_io_spi_pad_snapshot spi_pad_before, spi_pad_during;
+void esp_io_spi_pad_snapshot_get(esp_io_spi_pad_snapshot *s) {
+    s->level = gpio_get_level(BOARD_SPI_MISO);
+    s->iomux = REG_READ(IO_MUX_GPIO0_REG);
+    /* FSPIQ is SPI2 MISO, not GPIO input selector 0. Registers stride 4. */
+    s->matrix = REG_READ(GPIO_FUNC0_IN_SEL_CFG_REG + 4 * FSPIQ_IN_IDX);
+}
+void esp_io_spi_pad_evidence(esp_io_spi_pad_snapshot *before,
+                           esp_io_spi_pad_snapshot *during) {
+    *before = spi_pad_before; *during = spi_pad_during;
+}
+int esp_io_spi_pad_sample(unsigned pull, esp_io_spi_pad_result *r) {
+    if (!r || pull > 2) return ESP_ERR_INVALID_ARG;
+    if (esp_io_spi_busy()) return ESP_ERR_INVALID_STATE;
+    memset(r, 0, sizeof *r);
+    esp_io_spi_pad_snapshot_get(&r->before);
+    /* gpio_reset_pin() used by SPI close DISABLES input. Explicitly enable
+     * input-only; never output-enable GPIO0 or touch any other SPI pin. */
+    gpio_config_t cfg = {.pin_bit_mask = UINT64_C(1) << BOARD_SPI_MISO,
+        .mode = GPIO_MODE_INPUT, .pull_up_en = pull == 1,
+        .pull_down_en = pull == 2, .intr_type = GPIO_INTR_DISABLE};
+    esp_err_t rc = gpio_config(&cfg);
+    if (rc == ESP_OK) {
+        esp_io_spi_pad_snapshot_get(&r->sampled);
+        for (unsigned i = 0; i < 16; ++i) {
+            if (gpio_get_level(BOARD_SPI_MISO)) ++r->high; else ++r->low;
+            vTaskDelay(pdMS_TO_TICKS(1) ? pdMS_TO_TICKS(1) : 1);
+        }
+    }
+    /* Do not restore unknown disabled/output/peripheral state. Explicit idle
+     * contract: input-only, no pull; next SPI initialize owns its configuration. */
+    cfg.pull_up_en = 0; cfg.pull_down_en = 0;
+    esp_err_t restore_rc = gpio_config(&cfg);
+    esp_io_spi_pad_snapshot_get(&r->restored);
+    return rc != ESP_OK ? rc : restore_rc;
 }
 
 int esp_io_spi_open(uint32_t hz, const char **error) {
@@ -24,6 +65,8 @@ int esp_io_spi_open(uint32_t hz, const char **error) {
         if (error) *error = "previous SPI cleanup failed; reboot required";
         return ESP_ERR_INVALID_STATE;
     }
+    esp_io_spi_pad_snapshot_get(&spi_pad_before);
+    memset(&spi_pad_during, 0, sizeof spi_pad_during);
     spi_bus_config_t bus = {
         .mosi_io_num = BOARD_SPI_MOSI, .miso_io_num = BOARD_SPI_MISO,
         .sclk_io_num = BOARD_SPI_SCLK, .quadwp_io_num = -1,
@@ -35,6 +78,7 @@ int esp_io_spi_open(uint32_t hz, const char **error) {
         return rc;
     }
     spi_bus = true;
+    esp_io_spi_pad_snapshot_get(&spi_pad_during);
     spi_device_interface_config_t dev = {
         .clock_speed_hz = (int)hz, .mode = 0,
         .spics_io_num = BOARD_SPI_CS, .queue_size = 1
@@ -55,6 +99,7 @@ int esp_io_spi_transfer(const uint8_t tx[64], uint8_t rx[64], const char **error
         if (error) *error = "SPI queue";
         return ESP_ERR_INVALID_ARG;
     }
+    esp_io_spi_pad_snapshot_get(&spi_pad_during);
     memcpy(spi_tx, tx, sizeof spi_tx);
     memset(spi_rx, 0, sizeof spi_rx);
     memset(&spi_transaction, 0, sizeof spi_transaction);
