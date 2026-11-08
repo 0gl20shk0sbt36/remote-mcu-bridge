@@ -92,6 +92,8 @@ static int64_t esp_timer_get_time(void) {struct timespec t;clock_gettime(CLOCK_M
 static int esp_task_wdt_add(void *p) {(void)p;return 0;}
 static int esp_task_wdt_reset(void) {atomic_fetch_add(&feeds,1);return 0;}
 static void vTaskDelay(int n) {assert(n==100); /* Native restart returns to verify ordering. */}
+/* Port task teardown: the native worker returns instead of vanishing. */
+static void vTaskDelete(void *t) {(void)t;}
 static int esp_reset_reason(void) {return 0;}
 static int restarted,sequence,invalidated_at,restarted_at;
 static void esp_restart(void) {restarted++;restarted_at=++sequence;}
@@ -134,7 +136,6 @@ void module_host_configure(rmb_host *h) {(void)h;}
 #include "rmb/port.h"
 #include "mbedtls/sha256.h"
 #define TAG "native-supervisor"
-#define CONFIG_RMB_TOKEN "native-public-token"
 #ifndef RMB_CONFIG_TOKEN
 #define RMB_CONFIG_TOKEN CONFIG_RMB_TOKEN
 #endif
@@ -158,23 +159,27 @@ bool rmb_port_in_isr(void){return xPortInIsrContext()!=0;}
 void rmb_port_lock_enter(rmb_lock_t *p){pthread_mutex_lock(p);}
 void rmb_port_lock_exit(rmb_lock_t *p){pthread_mutex_unlock(p);}
 int rmb_port_task_create(const char *n,void (*f)(void *),void *c,uint32_t s,int p,rmb_task_t *o){return xTaskCreate(f,n,s,c,p,o)==1?0:-1;}
-rmb_task_t rmb_port_task_current(void){return xTaskGetCurrentTaskHandle();}
+/* The mock task handle is an int id; the port handle is opaque. */
+rmb_task_t rmb_port_task_current(void){return (rmb_task_t)(uintptr_t)xTaskGetCurrentTaskHandle();}
 void rmb_port_task_end(void){vTaskDelete(NULL);}
 void rmb_port_task_terminate(rmb_task_t t){vTaskDelete(t);}
 void rmb_port_task_wait_notify(void){(void)ulTaskNotifyTake(1,0xffffffffu);}
 void rmb_port_task_notify(rmb_task_t t){xTaskNotifyGive(t);}
 uint32_t rmb_port_task_stack_min_free(void){return uxTaskGetStackHighWaterMark(NULL);}
-int rmb_port_mutex_create(rmb_mutex_t *o){*o=xSemaphoreCreateMutex();return *o?0:-1;}
-int rmb_port_mutex_take(rmb_mutex_t m,uint32_t t){return xSemaphoreTake(m,t)?0:-1;}
-void rmb_port_mutex_give(rmb_mutex_t m){xSemaphoreGive(m);}
-void rmb_port_mutex_delete(rmb_mutex_t m){vSemaphoreDelete(m);}
+/* Mutexes are pthread mutexes here; the fixture's int-sentinel mock cannot
+ * support blocking take. Locking is never timed in the resident. */
+int rmb_port_mutex_create(rmb_mutex_t *o){static pthread_mutex_t lock=PTHREAD_MUTEX_INITIALIZER;*o=&lock;return 0;}
+int rmb_port_mutex_take(rmb_mutex_t m,uint32_t t){(void)t;return pthread_mutex_lock((pthread_mutex_t *)m);}
+void rmb_port_mutex_give(rmb_mutex_t m){pthread_mutex_unlock((pthread_mutex_t *)m);}
+void rmb_port_mutex_delete(rmb_mutex_t m){(void)m;}
 int rmb_port_sem_create(rmb_sem_t *o){*o=xSemaphoreCreateBinary();return *o?0:-1;}
-int rmb_port_sem_take(rmb_sem_t s,uint32_t t){return xSemaphoreTake(s,t)?0:-1;}
+/* xSemaphoreTake is void-returning and asserts an infinite wait, which is the
+ * only way the resident takes a semaphore (release signals the submitter). */
+int rmb_port_sem_take(rmb_sem_t s,uint32_t t){xSemaphoreTake(s,(int)t);return 0;}
 void rmb_port_sem_give(rmb_sem_t s){xSemaphoreGive(s);}
 void rmb_port_sem_delete(rmb_sem_t s){vSemaphoreDelete(s);}
 int rmb_port_queue_create(uint32_t l,uint32_t i,rmb_queue_t *o){*o=xQueueCreate(l,i);return *o?0:-1;}
-int rmb_port_queue_send(rmb_queue_t q,const void *i,uint32_t t){return xQueueSend(q,i,t)?0:-1;}
-int rmb_port_queue_receive(rmb_queue_t q,void *i,uint32_t t){return xQueueReceive(q,i,t)?0:-1;}
+/* Queue transfer is defined with the supervisor_job-typed queue below. */
 int rmb_port_wdt_register_current(void){return 0;}
 int rmb_port_wdt_feed(void){return 0;}
 int rmb_port_wdt_configure(const rmb_wdt_config_t *c){(void)c;return 0;}
@@ -200,6 +205,14 @@ static int xQueueReceive(int q,supervisor_job **p,int ticks) {
  (void)q;(void)ticks;pthread_mutex_lock(&qlock);
  while(!queued)pthread_cond_wait(&changed,&qlock);
  *p=queued;queued=NULL;pthread_mutex_unlock(&qlock);return pdTRUE;
+}
+/* Port queue transfers ride the same single-slot job queue; the item payload is
+ * one supervisor_job pointer, which is exactly what the fixture queues. */
+int rmb_port_queue_send(rmb_queue_t q,const void *i,uint32_t t) {
+ return xQueueSend((int)(intptr_t)q,(supervisor_job **)(uintptr_t)i,(int)t)?0:-1;
+}
+int rmb_port_queue_receive(rmb_queue_t q,void *i,uint32_t t) {
+ return xQueueReceive((int)(intptr_t)q,(supervisor_job **)i,(int)t)?0:-1;
 }
 """
 

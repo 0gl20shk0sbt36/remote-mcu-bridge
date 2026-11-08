@@ -89,6 +89,7 @@ python3 tools/module_ctl.py --help
 ### 文档、贡献与许可证
 
 - [维护与二次开发](docs/DEVELOPMENT.md) · [服务编写与部署手册](docs/USER_GUIDE.md) · [默认 STM ROM/UART 手册](docs/DEFAULT_STM_FIRMWARE.md)
+- [底座平台移植](docs/RESIDENT_PLATFORM.md)：底座只依赖 `include/rmb/port.h` 的 46 个函数，新平台实现这些即可；边界由 `esp32_rom/tests/test_port_boundary.py` 强制
 
 - [本地验证结果与边界](docs/TESTING.md) · [ABI4 重构合同](docs/ABI4_REFACTOR.md) · [看门狗与重连诊断](docs/WATCHDOG_RECOVERY.md)
 - [服务 A/B 实测与耦合评估](docs/SERVICE_AUTHORING.md) · [SPI 全 FF 深度调查](docs/SPI_INVESTIGATION.md)
@@ -187,6 +188,7 @@ python3 tools/module_ctl.py --help
 ### Documentation, contributing, and license
 
 - [Development and maintenance](docs/DEVELOPMENT.md) · [Service authoring/deployment](docs/USER_GUIDE.md) · [Default STM ROM/UART](docs/DEFAULT_STM_FIRMWARE.md)
+- [Resident platform porting](docs/RESIDENT_PLATFORM.md): the resident depends on 46 functions in `include/rmb/port.h`; a new host implements those, and `esp32_rom/tests/test_port_boundary.py` enforces the boundary
 
 - [Local verification and limits](docs/TESTING.md)
 - [Service A/B and coupling assessment](docs/SERVICE_AUTHORING.md) · [SPI all-FF investigation](docs/SPI_INVESTIGATION.md)

@@ -8,40 +8,58 @@
 #include <string.h>
 #include <limits.h>
 #include <stdlib.h>
+#include "rmb/port.h"
 #define RTC_NOINIT_ATTR
-#define portMUX_INITIALIZER_UNLOCKED 0
-typedef int portMUX_TYPE;
-static int lock_depth, isr, reset_count, reset_reason = 1;
+static int lock_depth, isr, reset_count;
+/* Reset provenance is the port's ESP-compatible enum value, not an ad-hoc int. */
+static rmb_reset_reason reset_reason = RMB_RST_POWER_ON;
 static int64_t clock_us;
 static char response[1024];
-#define ESP_RST_TASK_WDT 6
-#define ESP_RST_INT_WDT 5
-#define ESP_RST_WDT 7
-#define ESP_RST_PANIC 4
-static void enter(portMUX_TYPE *p) {
-    (void)p;
+#define ESP_RST_TASK_WDT RMB_RST_TASK_WATCHDOG
+#define ESP_RST_INT_WDT RMB_RST_INTERRUPT_WATCHDOG
+#define ESP_RST_WDT RMB_RST_OTHER
+#define ESP_RST_PANIC RMB_RST_PANIC
+static void enter(void) {
     assert(lock_depth == 0);
     ++lock_depth;
 }
-static void leave(portMUX_TYPE *p) {
-    (void)p;
+static void leave(void) {
     assert(lock_depth == 1);
     --lock_depth;
 }
-#define portENTER_CRITICAL(p) enter(p)
-#define portEXIT_CRITICAL(p) leave(p)
-static int xPortInIsrContext(void) {
-    return isr;
-}
-static int64_t esp_timer_get_time(void) {
+/* ── The port surface this fixture implements over its instrumented clock ── */
+int64_t rmb_port_now_us(void) {
     return clock_us;
 }
-static int esp_reset_reason(void) {
-    return reset_reason;
+void rmb_port_delay_ticks(uint32_t ticks) {
+    clock_us += (int64_t)ticks * 1000;
 }
-static void esp_restart(void) {
+void rmb_port_restart(void) {
     assert(lock_depth == 0);
     ++reset_count;
+}
+rmb_reset_reason rmb_port_reset_reason(void) {
+    return reset_reason;
+}
+void rmb_port_lock_enter(rmb_lock_t *lock) {
+    (void)lock;
+    enter();
+}
+void rmb_port_lock_exit(rmb_lock_t *lock) {
+    (void)lock;
+    leave();
+}
+bool rmb_port_in_isr(void) {
+    return isr != 0;
+}
+void rmb_port_log(int level, const char *tag, const char *format, ...) {
+    (void)level;
+    (void)tag;
+    (void)format;
+}
+void rmb_log_capture(const char *bytes, size_t length) {
+    (void)bytes;
+    (void)length;
 }
 static void reply(int fd, const char *s) {
     (void)fd;
@@ -268,13 +286,23 @@ static void test_hardware_crc(void) {
     assert(!service_fault_pending());
     assert(lease_rtc.boot == 1);
     memset(&lease_rtc, 0, sizeof lease_rtc);
-    reset_reason = ESP_RST_WDT;
+    /* Retained record lost (power loss): a hardware watchdog reset must still be
+     * journaled, with boot/reset origin unknowable. */
+    reset_reason = ESP_RST_TASK_WDT;
     service_watchdog_boot();
     assert(service_fault_pending());
     assert(lease_rtc.fault.last_feed_unknown);
     assert(lease_rtc.fault.boot == 0);
     assert(lease_rtc.fault.reset == SERVICE_UNKNOWN);
     assert(lease_rtc.fault.age_ms == SERVICE_UNKNOWN);
+    assert(lease_rtc.fault.reset_cause == ESP_RST_TASK_WDT);
+    /* RMB_RST_OTHER (ESP_RST_WDT, i.e. "other watchdogs") is not a stall the
+     * port contract attributes; a boot with no valid record invents no fault. */
+    memset(&lease_rtc, 0, sizeof lease_rtc);
+    reset_reason = ESP_RST_WDT;
+    service_watchdog_boot();
+    assert(!service_fault_pending());
+    assert(lease_rtc.fault.reason == 0);
     puts("PASS simulated reset retention, hardware-stall unknown attribution/age, CRC corruption "
          "rejection");
 }

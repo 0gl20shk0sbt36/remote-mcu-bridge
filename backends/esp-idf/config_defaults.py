@@ -201,6 +201,46 @@ def validate(values, profile):
         raise ConfigError("resident needs a 16..128 byte token; pass --credentials-file")
 
 
+# Board pin name -> Kconfig option that must match it in the built image.
+PIN_OPTIONS = {
+    "tx": "CONFIG_ROM_SERVICE_TX",
+    "rx": "CONFIG_ROM_SERVICE_RX",
+    "boot0": "CONFIG_ROM_SERVICE_BOOT0",
+    "nrst": "CONFIG_ROM_SERVICE_NRST",
+    "boot1": "CONFIG_ROM_SERVICE_BOOT1",
+}
+DEVICE_OPTIONS = {"stm32f103c8": "CONFIG_ROM_SERVICE_DEVICE_F103C8",
+                  "stm32f407zg": "CONFIG_ROM_SERVICE_DEVICE_F407ZG"}
+
+
+def verify_board_wiring(board, values):
+    """Reject a board whose JSON disagrees with the pins compiled into the image.
+
+    This is what keeps the registry authoritative: the firmware's wiring comes
+    from the compile-time defaults, so a mismatch is a silent hardware fault.
+    """
+    pins = board.get("pins") or {}
+    problems = []
+    for name, option in PIN_OPTIONS.items():
+        if name not in pins:
+            continue
+        expected = pins[name]
+        actual = values.get(option)
+        if actual is None:
+            problems.append(f"{option} missing from configuration")
+        elif int(actual) != int(expected):
+            problems.append(f"{name}: board.json says {expected}, image built with {actual}")
+    device = board.get("target_device")
+    option = DEVICE_OPTIONS.get(device)
+    if option and values.get(option) != "y":
+        problems.append(f"target_device {device} not selected in the image")
+    if problems:
+        raise ConfigError(
+            "board wiring does not match the compiled configuration: " + "; ".join(problems)
+        )
+    return True
+
+
 def describe(values):
     """Redacted configuration summary: shapes and lengths only, never values."""
     ssid = unquote(values.get("CONFIG_RMB_WIFI_SSID", ""))

@@ -200,6 +200,70 @@ class OverlayTests(unittest.TestCase):
         self.assertFalse(summary["placeholder_network"])
 
 
+class BoardRegistryTests(unittest.TestCase):
+    """A new board is data, not driver code: wiring is checked against the image."""
+
+    def board(self, **overrides):
+        board = json.loads((ROOT / "boards/esp32c3-stm32f103/board.json").read_text())
+        board.update(overrides)
+        return board
+
+    def compiled(self, **overrides):
+        values = {
+            "CONFIG_ROM_SERVICE_TX": "3",
+            "CONFIG_ROM_SERVICE_RX": "4",
+            "CONFIG_ROM_SERVICE_BOOT0": "5",
+            "CONFIG_ROM_SERVICE_NRST": "6",
+            "CONFIG_ROM_SERVICE_BOOT1": "-1",
+            "CONFIG_ROM_SERVICE_DEVICE_F103C8": "y",
+        }
+        values.update(overrides)
+        return values
+
+    def test_matching_board_and_image_are_accepted(self):
+        self.assertTrue(config.verify_board_wiring(self.board(), self.compiled()))
+
+    def test_any_pin_mismatch_is_rejected(self):
+        for pin, option in config.PIN_OPTIONS.items():
+            with self.subTest(pin=pin):
+                values = self.compiled(**{option: "12"})
+                with self.assertRaises(config.ConfigError) as error:
+                    config.verify_board_wiring(self.board(), values)
+                self.assertIn(pin, str(error.exception))
+
+    def test_missing_option_and_wrong_device_are_rejected(self):
+        values = self.compiled()
+        del values["CONFIG_ROM_SERVICE_NRST"]
+        with self.assertRaises(config.ConfigError):
+            config.verify_board_wiring(self.board(), values)
+        with self.assertRaises(config.ConfigError):
+            config.verify_board_wiring(
+                self.board(target_device="stm32f407zg"), self.compiled()
+            )
+
+    def test_driver_no_longer_hardcodes_one_board(self):
+        source = (ROOT / "backends/esp-idf/build.py").read_text()
+        self.assertNotIn('board["id"] != "esp32c3-stm32f103"', source)
+        self.assertNotIn('"spi_sclk": 7', source)
+        backend = json.loads((ROOT / "backends/esp-idf/backend.json").read_text())
+        self.assertEqual(backend["supported_targets"], ["esp32c3"])
+
+    def test_second_board_descriptor_is_valid_registry_data(self):
+        """A differently wired board only needs a JSON descriptor."""
+        board = self.board(
+            id="esp32c3-stm32f103-alt",
+            pins={"tx": 6, "rx": 7, "boot0": 8, "nrst": 9, "boot1": -1,
+                  "spi_sclk": 10, "spi_mosi": 11, "spi_miso": 12, "spi_cs": 13},
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "board.json"
+            path.write_text(json.dumps(board))
+            self.assertEqual(json.loads(path.read_text())["id"], "esp32c3-stm32f103-alt")
+        # The alt wiring is rejected against the fixed image it was not built for.
+        with self.assertRaises(config.ConfigError):
+            config.verify_board_wiring(board, self.compiled())
+
+
 class CliSurfaceTests(unittest.TestCase):
     def test_driver_and_registry_expose_credentials_flag(self):
         for command, script in (

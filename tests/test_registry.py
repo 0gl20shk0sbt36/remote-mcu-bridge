@@ -176,9 +176,10 @@ class Registry(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("Traceback", result.stderr)
 
-    def test_driver_rejects_metadata_wiring_before_sdk(self):
+    def test_driver_rejects_unsupported_target_before_sdk(self):
+        """Wiring is data now; the driver gate is the declared target set."""
         board = copy.deepcopy(self.board)
-        board["pins"]["tx"] = 4
+        board["target"] = "esp32s3"
         path = self.root / "boards/esp32c3-stm32f103/board.json"
         path.write_text(json.dumps(board))
         result = subprocess.run(
@@ -200,8 +201,33 @@ class Registry(unittest.TestCase):
             env={**os.environ, "IDF_PATH": ""},
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("fixed esp32c3-stm32f103", result.stderr)
+        self.assertIn("does not support target", result.stderr)
         self.assertFalse((self.root / "build").exists())
+
+    def test_driver_accepts_registered_wiring_as_data(self):
+        """A board whose pins differ is structurally valid: it fails only if the
+        image it was built with disagrees (verify_board_wiring), not here."""
+        board = copy.deepcopy(self.board)
+        board["pins"]["tx"] = 12
+        path = self.root / "boards/esp32c3-stm32f103/board.json"
+        path.write_text(json.dumps(board))
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "backends/esp-idf/build.py"),
+                "configure",
+                "--root", str(ROOT),
+                "--backend", str(ROOT / "backends/esp-idf/backend.json"),
+                "--board", str(path),
+                "--build-dir", str(self.root / "build"),
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "IDF_PATH": ""},
+        )
+        # Reaches the SDK requirement instead of rejecting the wiring itself.
+        self.assertIn("ESP-IDF 5.5.5 required", result.stderr)
+        self.assertNotIn("does not support target", result.stderr)
 
     def test_malformed_json(self):
         (self.root / "backends/esp-idf/backend.json").write_text("{")

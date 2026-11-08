@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "id": "esp-idf",
-  "description": "ESP32-C3 ESP-IDF resident runtime",
+  "description": "ESP-IDF resident runtime (any board whose JSON matches a supported target)",
   "implementation": "esp32_rom",
   "capabilities": [
     "resident-update",
@@ -19,5 +19,8 @@
     ],
     "python": ">=3.10"
   },
-  "driver": "build.py"
+  "driver": "build.py",
+  "supported_targets": [
+    "esp32c3"
+  ]
 }

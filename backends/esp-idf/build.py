@@ -47,28 +47,24 @@ try:
     validate(backend, a.root, a.backend, "backends")
     validate(board, a.root, a.board, "boards")
     compatible(backend, board)
-    expected_pins = {
-        "tx": 3,
-        "rx": 4,
-        "boot0": 5,
-        "nrst": 6,
-        "boot1": -1,
-        "spi_sclk": 7,
-        "spi_mosi": 1,
-        "spi_miso": 0,
-        "spi_cs": 10,
-    }
-    if (
-        backend["id"] != "esp-idf"
-        or board["id"] != "esp32c3-stm32f103"
-        or board["target"] != "esp32c3"
-        or board.get("target_device") != "stm32f103c8"
-        or board["pins"] != expected_pins
-    ):
+    # Registry-driven: any board descriptor whose target the backend supports is
+    # accepted. Wiring is not hardcoded here — it is checked against the pins
+    # actually compiled into the image (see verify_board_wiring below), so adding
+    # a board means adding JSON, not editing this driver.
+    if backend["id"] != "esp-idf":
+        raise ValueError("this driver implements only the esp-idf backend")
+    targets = backend.get("supported_targets")
+    if not isinstance(targets, list) or board["target"] not in targets:
         raise ValueError(
-            "ESP-IDF driver supports only the fixed esp32c3-stm32f103 board with fixed "
-            "documented wiring; configure UART/BOOT/reset through the single defaults file"
+            "backend does not support target "
+            + str(board["target"])
+            + "; declared targets: "
+            + ", ".join(map(str, targets or []))
         )
+    if not board.get("target_device"):
+        raise ValueError("board must declare target_device")
+    if not isinstance(board.get("pins"), dict) or not board["pins"]:
+        raise ValueError("board must declare its pin mapping")
     if a.build_dir == root or root.is_relative_to(a.build_dir):
         raise ValueError("unsafe build directory")
 except (ValueError, OSError) as exc:
@@ -77,6 +73,7 @@ except (ValueError, OSError) as exc:
 sys.path.insert(0, str(root / "backends/esp-idf"))
 from config_defaults import ConfigError, complete_credentials, credential_lines
 from config_defaults import describe, load_credentials, profile_lines, read_values
+from config_defaults import verify_board_wiring
 from config_defaults import validate as validate_config
 
 # Fail fast on unusable credentials: no build directory, no SDK probing first.
@@ -150,6 +147,7 @@ if rc == 0:
     values = read_values(config.read_text())
     try:
         validate_config(values, a.profile)
+        verify_board_wiring(board, values)
     except ConfigError as exc:
         p.error(str(exc))
     summary = describe(values)
