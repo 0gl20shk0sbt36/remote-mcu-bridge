@@ -116,15 +116,15 @@ class ModuleFormatTests(unittest.TestCase):
 
     def fixture(self, **changes):
         # Format-only fixture, not a compiled/hardware module or predicted VA.
-        fields = dict(magic=0x314d5242, abi=3, hs=40, total=48,
+        fields = dict(magic=0x314d5242, abi=4, hs=40, total=48,
                       text=0x42200028, ts=4, data=0x3fc90000,
                       ds=4, bs=4, entry=0x42200028)
         fields.update(changes)
         return self.builder.HEADER.pack(*fields.values()) + bytes(8)
 
-    def test_xip_abi3_layout(self):
-        self.assertEqual(self.builder.validate_image(self.fixture())[1], 3)
-        for changes in (dict(abi=1), dict(text=0x40380028),
+    def test_xip_abi4_layout(self):
+        self.assertEqual(self.builder.validate_image(self.fixture())[1], 4)
+        for changes in (dict(abi=1), dict(abi=3), dict(text=0x40380028),
                         dict(text=0x42200000), dict(entry=0x4220002c),
                         dict(bs=32768), dict(ts=0xffffffff), dict(total=47)):
             with self.subTest(changes=changes), self.assertRaises(ValueError):

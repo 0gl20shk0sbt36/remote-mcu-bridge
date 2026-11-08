@@ -10,6 +10,12 @@ from native_deps import cjson
 CJSON = cjson()
 service = (ROOT/'main/service.c').read_text()
 business = (ROOT/'module/business.c').read_text()
+for include in ('uart_priority.inc', 'uart_framed.inc'):
+    business = business.replace('#include "'+include+'"', (ROOT/'module'/include).read_text())
+# Device status is tested at the service boundary, not part of UART transport.
+a = business.index('static void service_status(')
+b = business.index('static bool stream_auth_ex(', a)
+business = business[:a] + business[b:]
 backend = (ROOT/'module/platform/esp_idf_io.c').read_text()
 uart_mode = backend[backend.index('esp_err_t esp_io_uart_mode('):backend.index('static uint64_t pin_mask(')]
 # The resident owns logs; UART ownership/auth/framing now execute in business.
@@ -24,7 +30,8 @@ streams = ('''\n#define stream_auth_ex log_stream_auth_ex
 #undef stream_auth
 #undef stream_send
 ''' + business[business.index('static esp_err_t target_uart_mode('):business.index('static uint32_t spi_test_seq=1;')])
-helpers = service[service.index('bool authenticated('):service.index('#include "module_runtime.h"')]
+helpers = service[service.index('bool authenticated('):service.index('#include "streams.inc"')]
+helpers = helpers.replace('#include "module_runtime.h"', '')
 preamble = r'''
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
@@ -43,7 +50,17 @@ preamble = r'''
 #include <unistd.h>
 #include <time.h>
 #include "cJSON.h"
+#include "rmb/service.h"
+static int native_read(rmb_connection c,void *b,size_t n,bool nb) {int r=(int)recv(c,b,n,nb?MSG_DONTWAIT:0);return r<0&&(errno==EAGAIN||errno==EWOULDBLOCK)?RMB_IO_AGAIN:r;}
+static int native_write(rmb_connection c,const void *b,size_t n,bool nb) {int r=(int)send(c,b,n,nb?MSG_DONTWAIT:0);return r<0&&(errno==EAGAIN||errno==EWOULDBLOCK)?RMB_IO_AGAIN:r;}
+static const rmb_net_api native_net={.read=native_read,.write=native_write};
+static int64_t esp_timer_get_time(void);
+static const rmb_host native_host={.net=&native_net,.now_us=esp_timer_get_time};
+static const rmb_host *host=&native_host;
 #define CONFIG_ROM_SERVICE_TOKEN "public-native-test-token"
+#define CONFIG_RMB_TOKEN CONFIG_ROM_SERVICE_TOKEN
+static void service_progress(void) {}
+static void service_io_progress(void) {}
 #define CONFIG_ROM_SERVICE_RX 4
 #define BOARD_UART_RX CONFIG_ROM_SERVICE_RX
 #define HEADER_US 100000
@@ -89,8 +106,8 @@ static void check_auth(const char *text,bool uart,bool expected,unsigned expecte
  int f[2];assert(socketpair(AF_UNIX,SOCK_STREAM,0,f)==0);
  assert(write(f[0],text,strlen(text))==(ssize_t)strlen(text));
  unsigned baud=0;bool history=false;
- assert((uart ? stream_auth(f[1],true,&baud,&history) : log_stream_auth(f[1],false,&baud,&history))==expected);
- if(expected)assert(baud==expected_baud);
+ assert((uart ? stream_auth(f[1],true,&baud,&history) : log_stream_auth(f[1],&history))==expected);
+ if(expected && uart)assert(baud==expected_baud);
  close(f[0]);close(f[1]);
 }
 static int console(const char *f,va_list v){(void)f;(void)v;console_calls++;return 7;}
@@ -163,7 +180,7 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory(prefix='v14-streams-',dir=os.environ.get('TMPDIR',str(Path.home()/'tmp'))) as tmp:
     p=Path(tmp); (p/'test.c').write_text(preamble+uart_mode+helpers+streams+tests)
-    subprocess.run(['cc','-std=c11','-pthread','-Wall','-Wextra','-Werror','-I'+str(ROOT/'main'),'-I'+str(CJSON),str(p/'test.c'),str(CJSON/'cJSON.c'),'-lm','-o',str(p/'test')],check=True)
+    subprocess.run(['cc','-std=c11','-pthread','-Wall','-Wextra','-Werror','-I'+str(ROOT/'main'),'-I'+str(ROOT.parent/'include'),'-I'+str(CJSON),str(p/'test.c'),str(CJSON/'cJSON.c'),'-lm','-o',str(p/'test')],check=True)
     subprocess.run([str(p/'test')],check=True,timeout=10)
 # Ownership before staging upload and target side effects; status remains independent.
 assert business.index('control_acquire()',business.index('/* Only ESP staging')) < business.index('esp_partition_erase_range') < business.index('"Staging upload start')

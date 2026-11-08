@@ -1,7 +1,8 @@
 {
   "name": "hello-B",
   "sources": [
-    "service.c"
+    "service.c",
+    "platform_idf.c"
   ],
   "drivers": [],
   "defines": {

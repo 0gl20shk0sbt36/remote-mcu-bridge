@@ -14,8 +14,9 @@ import sys
 import time
 import zlib
 
-SERVICE = 'stm32-rom-uart'
-DISCOVER = b'STM32ROM_DISCOVER_V1'
+SERVICE = 'remote-mcu-bridge'
+LEGACY_SERVICE = 'stm32-rom-uart'
+DISCOVER = b'STM32ROM_DISCOVER_V1'  # ABI4 residents accept this compatibility query.
 
 
 def warn(message):
@@ -114,7 +115,7 @@ def _announcement(data, host):
     """Only validated fields can influence the subsequent control connection."""
     try:
         obj = json.loads(data)
-        if not isinstance(obj, dict) or obj.get('service') != SERVICE:
+        if not isinstance(obj, dict) or obj.get('service') not in (SERVICE, LEGACY_SERVICE):
             return None
         ident, port = obj.get('id'), obj.get('port')
         if not isinstance(ident, str) or not 1 <= len(ident) <= 128:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Link ABI-3 business code against the exact, final resident ESP-IDF ELF.
+"""Link ABI-4 service code against the exact, final resident ESP-IDF ELF.
 
 Resident symbols are GNU ld --just-symbols imports, never copied sections. Only
 missing functions are extracted from IDF component archives; the resident owns
@@ -18,7 +18,7 @@ import struct
 import subprocess
 
 MAGIC = 0x314D5242
-ABI = 3
+ABI = 4
 DRAM_SIZE = 32768
 HEADER = struct.Struct('<10I')
 # Never extract another copy of any of these process-wide runtimes.
@@ -111,13 +111,16 @@ def symbol_proof(symbols, base, relocs):
     for line in relocs.splitlines():
         fields = line.split()
         if len(fields) >= 5 and fields[2].startswith('R_RISCV_'):
-            referenced.add(fields[4])
+            # Local symbols may shadow resident globals with the same name.
+            # Relocation target ADDRESS, not just spelling, proves an import.
+            if re.fullmatch(r'[0-9a-fA-F]+', fields[3]):
+                referenced.add((fields[4], int(fields[3], 16)))
     def describe(items):
         return {name: {'address': hex(address), 'kind': kind}
                 for name, (address, kind) in sorted(items)}
     imported = describe((name, value) for name, value in symbols.items()
-                        if name in referenced and name in base and value[1] == 'A'
-                        and value[0] == base[name][0])
+                        if (name, value[0]) in referenced and name in base
+                        and value[1] in ('A', 'W', 'V') and value[0] == base[name][0])
     defined = describe((name, value) for name, value in symbols.items()
                        if name not in base or value[0] != base[name][0])
     return imported, defined
@@ -207,14 +210,15 @@ def main():
             continue
         flags.append(arg)
         i += 1
-    flags += ['-I' + str(root / 'rom'), '-I' + str(here.parent / 'main'),
+    flags += ['-I' + str(root / 'include'), '-I' + str(root / 'rom'), '-I' + str(here.parent / 'main'),
               '-I' + str(here), '-Os', '-msmall-data-limit=0', '-mno-relax',
               '-ffreestanding', '-fno-builtin', '-fno-common',
               '-ffunction-sections', '-fdata-sections']
     flags += [f'-D{name}={value}' for name, value in sorted(defines.items())]
     macros = run('gcc', *flags, '-dM', '-E', '-include', 'module_abi.h',
                  '-x', 'c', '/dev/null', cwd=template['directory'])
-    for name, expected in (('MODULE_ABI_VERSION', ABI), ('MODULE_DRAM_SIZE', DRAM_SIZE)):
+    # -dM preserves aliases; check the SDK literal and runtime capacity.
+    for name, expected in (('RMB_SERVICE_ABI', ABI), ('MODULE_DRAM_SIZE', DRAM_SIZE)):
         value = re.search(r'^#define ' + name + r'\s+(\d+)[uUlL]*\s*$', macros, re.M)
         if not value or int(value[1]) != expected:
             raise ValueError(f'{name} must be {expected} in the actual IDF compile configuration')

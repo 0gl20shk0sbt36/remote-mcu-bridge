@@ -28,6 +28,12 @@ target_compile_options(spi_workflow_native PRIVATE -fsanitize=address,undefined 
 target_link_options(spi_workflow_native PRIVATE -fsanitize=address,undefined)
 add_test(NAME spi_workflow_native COMMAND spi_workflow_native)
 foreach(pair IN ITEMS
+    "generic_network|esp32_rom/tests/test_generic_network.py"
+    "service_watchdog|tests/test_service_watchdog.py"
+    "management_fault_client|tests/test_management_fault_client.py"
+    "exact_deadline|tests/test_exact_deadline.py"
+    "supervisor_deadline|tests/test_supervisor_deadline.py"
+    "service_abi|tests/test_service_abi.py"
     "rom_e2e|tests/rom_e2e.py"
     "ramtarget_unit|tests/test_ramtarget.py"
     "supervisor_startup|esp32_rom/tests/test_supervisor_startup.py"

@@ -6,6 +6,8 @@
 
 ### 状态与边界
 
+- 当前源码为 **ABI4 通用底座 + 独立服务**；STM32 擦写、探测、目标复位与 UART/SPI 属于服务，底座不含 ROM 回调。先前实机报告为 ABI3，不能冒充新版实机验收；ABI3 模块不能装入 ABI4 底座。
+- 服务使用 `include/rmb/service.h` 的网络与监督接口，显式维护看门狗角色；故障报告可由重连客户端从管理端口读取并按序号确认。
 - 原生测试验证生产核心算法与模拟 I/O，不是可部署的第二个后端。
 - 其他平台的模板仅供移植设计使用，**不受支持、不能视为可构建或可运行的实现**。
 - 默认关闭网络服务及模块运行入口。启用占位配置只用于编译检查；不是部署配置，不应烧录。
@@ -66,7 +68,7 @@ python3 tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103
 | `boards/esp32c3-stm32f103/board.json` | 板卡选择及其后端关联 |
 | `esp32_rom/main/service.c`、`*.inc` | ESP-IDF 管理服务、流与监督逻辑 |
 | `esp32_rom/main/module_runtime.c`、`module_runtime.h` | ESP 模块存储/加载与更新适配 |
-| `esp32_rom/main/module_abi.h` | 模块镜像头、ABI 与主机/模块函数表 |
+| `include/rmb/service.h`、`esp32_rom/main/module_abi.h` | 通用服务 SDK 与平台镜像头，不引入 ROM API |
 | `esp32_rom/module/entry.c`、`business.c` | 可替换业务模块入口与业务 |
 | `esp32_rom/module/logic/spi_diagnostic.c` | 独立 SPI 诊断流程逻辑 |
 | `esp32_rom/module/platform/esp_idf_io.c`、`board_config.h` | 业务 UART/GPIO/SPI 的 ESP 适配与板级配置 |
@@ -85,7 +87,7 @@ python3 tools/module_ctl.py --help
 
 ### 文档、贡献与许可证
 
-- [本地验证结果与边界](docs/TESTING.md)
+- [本地验证结果与边界](docs/TESTING.md) · [ABI4 重构合同](docs/ABI4_REFACTOR.md) · [看门狗与重连诊断](docs/WATCHDOG_RECOVERY.md)
 - [服务 A/B 实测与耦合评估](docs/SERVICE_AUTHORING.md) · [SPI 全 FF 深度调查](docs/SPI_INVESTIGATION.md)
 - [接线与 SRAM 限制](docs/WIRING.md) · [模块构建](docs/MODULE_BUILD.md) · [文档索引](docs/README.md) · [后端移植](docs/BACKEND_PORTING.md)
 - [贡献指南](CONTRIBUTING.md) · [安全政策](SECURITY.md)
@@ -99,6 +101,8 @@ A network-managed MCU bridge separating a portable update state machine and STM3
 
 ### Status and limits
 
+- Current sources use **ABI4 generic resident + independent services**. STM32 programming/probing/reset and target UART/SPI belong to the service, not resident callbacks. Earlier hardware reports validate ABI3, not this revision; ABI3 modules cannot load on ABI4.
+- Services use `include/rmb/service.h` and explicitly maintain watchdog-role leases. Authenticated reconnecting clients retrieve diagnostics and acknowledge the exact fault sequence.
 - Native tests exercise production algorithms and simulated I/O; they are not a second deployable backend.
 - Other platform templates are design scaffolding: **unsupported, not buildable or runnable implementations**.
 - Network service and module execution entry points are disabled by default. Placeholder-enabled configuration is for compilation only, not deployment or flashing.

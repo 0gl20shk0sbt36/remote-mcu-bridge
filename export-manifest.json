@@ -6,15 +6,15 @@
       "path": "config/ci-disabled.defaults",
       "source_origin": "config/ci-disabled.defaults",
       "source_sha256": "355e5747584cc4ca731520b8427b090d3290f2dcacaaeb607499f49aec0a4fff",
-      "sha256": "355e5747584cc4ca731520b8427b090d3290f2dcacaaeb607499f49aec0a4fff",
-      "transformed": false
+      "sha256": "dd6df7e5e34f16fad24b3e65511e0af57dd3c625a6972cc2363c1a7f7c552a97",
+      "transformed": true
     },
     {
       "path": "config/ci-enabled.defaults",
       "source_origin": "config/ci-enabled.defaults",
       "source_sha256": "0d59e909b92d0aedadc84aa068d6023c2cc144de39d7bdc575007293f6efbf5b",
-      "sha256": "0d59e909b92d0aedadc84aa068d6023c2cc144de39d7bdc575007293f6efbf5b",
-      "transformed": false
+      "sha256": "3f8d86cd7327b27ecd7d66c8fe5db09ef56d87490cd2ca23dd2ecf626d9f52c2",
+      "transformed": true
     },
     {
       "path": "core/include/bridge/platform.h",
@@ -55,43 +55,43 @@
       "path": "esp32_rom/main/CMakeLists.txt",
       "source_origin": "esp32_rom/main/CMakeLists.txt",
       "source_sha256": "779a7c4630c5cd3051ca3a23b51745776f2e8f76d7f2a6dcf7f4b74c4ba805db",
-      "sha256": "779a7c4630c5cd3051ca3a23b51745776f2e8f76d7f2a6dcf7f4b74c4ba805db",
-      "transformed": false
+      "sha256": "3019a40445977d84e892992d8d15eb99782f390fa63f74b155e94818b5c4b846",
+      "transformed": true
     },
     {
       "path": "esp32_rom/main/Kconfig.projbuild",
       "source_origin": "esp32_rom/main/Kconfig.projbuild",
       "source_sha256": "3c8ea615291f601c01757f54b358d9e5e22be9105cec420dfd0b457366a63383",
-      "sha256": "3c8ea615291f601c01757f54b358d9e5e22be9105cec420dfd0b457366a63383",
-      "transformed": false
+      "sha256": "409f812b03448090e68ff3c8493f90a5c036ebb6c812589e64189bd0166cf341",
+      "transformed": true
     },
     {
       "path": "esp32_rom/main/module_abi.h",
       "source_origin": "esp32_rom/main/module_abi.h",
       "source_sha256": "dc4214aea83d31361124b1347cc1957e94052709d30554007bf4f67e104875ef",
-      "sha256": "dc4214aea83d31361124b1347cc1957e94052709d30554007bf4f67e104875ef",
-      "transformed": false
+      "sha256": "3dec85cca12a0d0d85bf2b2d6bf3f77b6aeb68522e587447f764d27a9f15ffa2",
+      "transformed": true
     },
     {
       "path": "esp32_rom/main/module_runtime.c",
       "source_origin": "esp32_rom/main/module_runtime.c",
       "source_sha256": "8c2121085d366ba513820239f4b401ea20c468602d41a7be11ede8468a7cb89c",
-      "sha256": "8c2121085d366ba513820239f4b401ea20c468602d41a7be11ede8468a7cb89c",
-      "transformed": false
+      "sha256": "abe4e50ee0a388599f1013481a7265e4c6b7c3d722abdc8a54eb26250c24af79",
+      "transformed": true
     },
     {
       "path": "esp32_rom/main/module_runtime.h",
       "source_origin": "esp32_rom/main/module_runtime.h",
       "source_sha256": "8e44a0980b8ec9fdc770682761a409964bd98deb78d17b0129d37c3eefd84725",
-      "sha256": "8e44a0980b8ec9fdc770682761a409964bd98deb78d17b0129d37c3eefd84725",
-      "transformed": false
+      "sha256": "635e80e624e35cf570699ef2c5ce855a0989e94b6dc5d415ccd468ecaaac8b89",
+      "transformed": true
     },
     {
       "path": "esp32_rom/main/service.c",
       "source_origin": "esp32_rom/main/service.c",
       "source_sha256": "463866204aa05015d1c0bcd05219b15509b5cba5f5210c6fce3375991f0628ee",
-      "sha256": "463866204aa05015d1c0bcd05219b15509b5cba5f5210c6fce3375991f0628ee",
-      "transformed": false
+      "sha256": "5f2e964e7da5cf8640588e0ef1820f1c0b545164beef2d23cd9ca6cb2e85dd6a",
+      "transformed": true
     },
     {
       "path": "esp32_rom/main/stream_ring.h",
@@ -104,15 +104,15 @@
       "path": "esp32_rom/main/streams.inc",
       "source_origin": "esp32_rom/main/streams.inc",
       "source_sha256": "a5560c91ff08031d3eccb3fee83989f90e1501b9a25057854756f80623a2de24",
-      "sha256": "a5560c91ff08031d3eccb3fee83989f90e1501b9a25057854756f80623a2de24",
-      "transformed": false
+      "sha256": "c7b97a0a479c54450fc9377dd353500ab2b3af4d5306a206f0cbd531ab6b6c5f",
+      "transformed": true
     },
     {
       "path": "esp32_rom/main/supervisor.inc",
       "source_origin": "esp32_rom/main/supervisor.inc",
       "source_sha256": "9fe8e517be18233c3d1781ae70b373c184d5e1f72afc8251917ede35e7a1ac66",
-      "sha256": "9fe8e517be18233c3d1781ae70b373c184d5e1f72afc8251917ede35e7a1ac66",
-      "transformed": false
+      "sha256": "62b9d3515a51add05458ed2a86ed5c101790063d4d88e4da3fa9e9fbb11fe9de",
+      "transformed": true
     },
     {
       "path": "esp32_rom/main/uart_framed.inc",
@@ -132,22 +132,22 @@
       "path": "esp32_rom/module/build_module.py",
       "source_origin": "esp32_rom/module/build_module.py",
       "source_sha256": "2c2dc79fe5271239fbcec5c13224d2a0f6a251ccec505c1986dc5e7f0c97977c",
-      "sha256": "6b288ebb864ebea161d04ff9976f0d9d7089dfb03d6ecd524b2a2328f01d6ecf",
+      "sha256": "e24e3c6a70ce9671e395d80c3c400aa10f2f36932c289f1bb299e555ea35829c",
       "transformed": true
     },
     {
       "path": "esp32_rom/module/business.c",
       "source_origin": "esp32_rom/module/business.c",
       "source_sha256": "183c74b79bcfd18aa19ebc4dcf4c6117eb553b1c40931a6e32721e6aaf0bb3f2",
-      "sha256": "54b1420c0e0e860c3513de94e08c88a1d8b312ce0eb8cfd559afb81d0618f63d",
+      "sha256": "0eb437e03b46ce14a426a6f883da04c5b60b1cf80a0512d78959f7d38e0e745d",
       "transformed": true
     },
     {
       "path": "esp32_rom/module/entry.c",
       "source_origin": "esp32_rom/module/entry.c",
       "source_sha256": "bfc6b0518ade55abb49053f9bb7f5ac230a1a73e3a682d21b0ac32bbb3a5d0b7",
-      "sha256": "bfc6b0518ade55abb49053f9bb7f5ac230a1a73e3a682d21b0ac32bbb3a5d0b7",
-      "transformed": false
+      "sha256": "e64d4e77e5a10fa2109da2fa9642827a8568bedc3a9308acf1bfa6cf98a037a5",
+      "transformed": true
     },
     {
       "path": "esp32_rom/module/logic/spi_diagnostic.c",
@@ -202,15 +202,15 @@
       "path": "esp32_rom/tests/static_checks.py",
       "source_origin": "esp32_rom/tests/static_checks.py",
       "source_sha256": "530445f5dade834c1d3240c76adb8cbdaf55cb82db95bbe00502371a4d93f261",
-      "sha256": "530445f5dade834c1d3240c76adb8cbdaf55cb82db95bbe00502371a4d93f261",
-      "transformed": false
+      "sha256": "71bbaddc2a24f10939572719f245ded3e790acc5098bf8a2d78382686f285290",
+      "transformed": true
     },
     {
       "path": "esp32_rom/tests/test_module_format.py",
       "source_origin": "esp32_rom/tests/test_module_format.py",
       "source_sha256": "0357fa9c36112042b1a990722fbd38e22764f07e0a77308d385e120588fa5edc",
-      "sha256": "0357fa9c36112042b1a990722fbd38e22764f07e0a77308d385e120588fa5edc",
-      "transformed": false
+      "sha256": "8f6c65c26363e871e5b6dc6cc48a61ded844cfe4238ba1c71e0d5c98cce5de32",
+      "transformed": true
     },
     {
       "path": "esp32_rom/tests/test_module_header.c",
@@ -244,15 +244,15 @@
       "path": "esp32_rom/tests/test_streams.py",
       "source_origin": "esp32_rom/tests/test_streams.py",
       "source_sha256": "03450a748ceea246fbd46f5ba8c6da1e404725c0d70a3278059154cfe46df087",
-      "sha256": "18faa4f1a7843f5c15fc018e616e7710174d7dab37114318ac0659fe6ece0916",
+      "sha256": "41dd2c2a2f2e5deaf61d3fa2bc70f65cc145ece9daa72cc2d515d9f0125f8d2d",
       "transformed": true
     },
     {
       "path": "esp32_rom/tests/test_supervisor.py",
       "source_origin": "esp32_rom/tests/test_supervisor.py",
       "source_sha256": "981127effe52f527c1d5814ee4fb16798521a240bedd486f4aa6b510942399d8",
-      "sha256": "981127effe52f527c1d5814ee4fb16798521a240bedd486f4aa6b510942399d8",
-      "transformed": false
+      "sha256": "e59e60f8794f510c308b066f746f2ce077a4e2041709275cf1df77ea2842ebff",
+      "transformed": true
     },
     {
       "path": "esp32_rom/tests/test_supervisor_core.c",
@@ -265,15 +265,15 @@
       "path": "esp32_rom/tests/test_supervisor_protocol.py",
       "source_origin": "esp32_rom/tests/test_supervisor_protocol.py",
       "source_sha256": "2310e36f1a56e073f5f2dc3376cd542a240e6ee77df2c18b8a63e0d9e911ef9e",
-      "sha256": "940ca40745c1b6cdd156f5cfd4a14a50d2f4ea1876fb43c6800cdf832086b467",
+      "sha256": "1cc6123a902d95890b84e52feb20859514795b4ee21fcbfd65f4aa66cc344f03",
       "transformed": true
     },
     {
       "path": "esp32_rom/tests/test_supervisor_startup.py",
       "source_origin": "esp32_rom/tests/test_supervisor_startup.py",
       "source_sha256": "9571ede564e5e43d9106537ff4fd9e619a10d8260fa6075f4bf23bdf43ba4ea0",
-      "sha256": "9571ede564e5e43d9106537ff4fd9e619a10d8260fa6075f4bf23bdf43ba4ea0",
-      "transformed": false
+      "sha256": "8b3dec6dc245d03256f179fd6f653bea24d45333e8b19481087e4890cc137830",
+      "transformed": true
     },
     {
       "path": "esp32_rom/tests/test_uart_trace.py",
@@ -405,8 +405,8 @@
       "path": "tools/module_ctl.py",
       "source_origin": "tools/module_ctl.py",
       "source_sha256": "de01b8b326e48b0d56c518d719763b9c264bd2c5ba59c4fe1ac67aef3f4ce40e",
-      "sha256": "de01b8b326e48b0d56c518d719763b9c264bd2c5ba59c4fe1ac67aef3f4ce40e",
-      "transformed": false
+      "sha256": "d04b15f169a8491a0be5eacef01b20dbdb9b26c336590931d310664deb1d44a9",
+      "transformed": true
     },
     {
       "path": "tools/ramtarget/devices.json",
@@ -426,8 +426,8 @@
       "path": "tools/romctl.py",
       "source_origin": "tools/romctl.py",
       "source_sha256": "ff8b9dd4571e98c2c0d4da082c050cf09a9d7b52dfbad1e9074fa052813143e4",
-      "sha256": "ff8b9dd4571e98c2c0d4da082c050cf09a9d7b52dfbad1e9074fa052813143e4",
-      "transformed": false
+      "sha256": "6d0a5faf7c492a22a80b5304f5d147afee9d779cf6b9295fb67434b16940546b",
+      "transformed": true
     },
     {
       "path": "tools/spi_test.py",
@@ -450,5 +450,6 @@
       "sha256": "bf63e9bee3ccc8789e3e2b50ad95f71b10fc97a39265df1ee26dede4a888bc6b",
       "transformed": false
     }
-  ]
+  ],
+  "scope": "Original export provenance; current complete tree is listed in publication-inventory.json"
 }

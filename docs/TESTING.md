@@ -2,7 +2,16 @@
 
 ## 中文
 
-### 本地执行结果（2026-11-07）
+### ABI4 本地结果（2026-11-08）
+
+- 完整 CTest **28/28 通过**，包含 ROM E2E、生产通用网络、通用监督/更新、服务看门狗、故障客户端及 hello A/B；未因迁移而跳过已注册的失败项。
+- 真实 ESP-IDF 5.5.5 `safe` 与 `compile-enabled` 底座构建通过；启用配置要求 IWDT、TWDT panic 和 panic 后重启，防止只报警不恢复。
+- STM 服务、hello A/B 对 ABI4 底座完成真实 RISC-V 编译/链接；均无未解析符号、无重复底座定义、无隐藏底座网络函数导入。配置中的非空网络名称/令牌字节未进入这些模块。
+- 链接证明使用合成取指地址，产物全部 **NOT DEPLOYABLE**。未部署 ABI4；下面的实机结果只属于历史 ABI3。
+- 看门狗原生测试直接编译生产实现，覆盖分角色超时、截止点拒绝续命、根角色不可关闭、陈旧 ID、大量槽复用、CRC、跨模拟复位保留、精确序号确认、新硬件事件替换旧待确认事件，以及更新/隔离启动不产生重启循环。它不等于实际芯片 WDT 和 RTC 验收。
+- hello A/B 的实际 C/ASan/UBSan 测试与 13 项 manifest/链接证明测试通过。管理客户端另有 6 项实际 localhost TCP/参数测试。
+
+### 历史 ABI3 本地执行结果（2026-11-07）
 
 - 整理后的源码正本：**22/22 CTest 通过**，包含原工程适用测试、注册表、客户端、发现、probe、SPI 原始数据/采样接口及最小服务 A/B 的原生检查。最后完整运行在新增深度诊断与服务清单支持后执行。
 - 更新核心的严格 GCC / ASan / UBSan 检查通过：270 个场景、225765 次断言、179 次注入故障；覆盖回读错误、部分擦写、分片、对齐、不可变启动许可和提交失败。模拟摘要只测试回调/范围/比较，不冒充密码学实现验证。
@@ -46,7 +55,15 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 
 ## English
 
-### Local results (2026-11-07)
+### ABI4 local results (2026-11-08)
+
+- Full **28/28 CTest** passed, including ROM E2E, production generic networking/supervision, watchdog, management client and hello services. No failing registered fixture was skipped to make migration pass.
+- Real ESP-IDF safe and enabled builds passed. Enabled configuration requires IWDT, TWDT panic and reboot-on-panic.
+- STM, hello A and hello B really cross-linked against the ABI4 resident, without undefined symbols, duplicate resident definitions or hidden resident network-helper imports. Nonempty configured network-name/token bytes were absent from modules.
+- All module checks use a synthetic text address: **NOT DEPLOYABLE**. ABI4 has not been flashed; hardware results below apply only to ABI3.
+- Production watchdog C passed native ASan/UBSan tests for independent roles, exact deadlines, stale IDs, root protection, CRC/retention, sequence ACK and new hardware incidents. Native simulated resets do not validate real chip WDT/RTC behavior. Hello variants and 13 manifest/link-proof tests passed; six client tests exercise actual localhost TCP and argument validation.
+
+### Historical ABI3 local results (2026-11-07)
 
 - The clean source tree passed **22/22 CTest entries after the deep SPI diagnostics and service-manifest extension**, including applicable original host fixtures, registry/client/discovery/probe checks, SPI report/pad request tests and native hello A/B checks.
 - Strict GCC / ASan / UBSan checks passed for the update core: 270 scenarios, 225765 assertions and 179 injected failures. The mock digest tests callback ranges and comparisons, not cryptographic correctness.

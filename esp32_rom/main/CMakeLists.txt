@@ -1,5 +1,5 @@
-idf_component_register(SRCS "service.c" "module_runtime.c" "../../rom/devices.c" "../../core/update.c" "../../core/supervisor.c"
-    INCLUDE_DIRS "." "../../rom" "../../include"
+idf_component_register(SRCS "service.c" "module_runtime.c" "generic_network.c" "../../core/update.c" "../../core/supervisor.c"
+    INCLUDE_DIRS "." "../../include"
     REQUIRES esp_app_format driver esp_wifi esp_event esp_netif esp_timer esp_partition nvs_flash json mbedtls)
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-error=misleading-indentation)
 

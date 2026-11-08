@@ -6,6 +6,7 @@
 
 | 文档/源码 | 用途 |
 |---|---|
+| [ABI4 重构](ABI4_REFACTOR.md)、[服务编写](SERVICE_AUTHORING.md)、[看门狗与重连诊断](WATCHDOG_RECOVERY.md) | 当前接口、生命周期、故障读取/确认与验收边界 |
 | [后端移植指南](BACKEND_PORTING.md) | 通用算法、平台职责、注册流程与验收边界 |
 | [贡献指南](../CONTRIBUTING.md) | 开发流程、测试和提交要求 |
 | [安全政策](../SECURITY.md) | 可信网络限制、漏洞报告和部署风险 |

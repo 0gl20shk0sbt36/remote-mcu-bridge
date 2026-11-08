@@ -1,6 +1,8 @@
-"""Execute production async INIT/worker/status with pthread scheduling.
-No ESP watchdog or hardware emulation: proves an entry blocked on the worker
-cannot retain the management stack or stop management status replies.
+"""Native execution of production ABI4 supervisor and module runtime.
+
+Only platform APIs, RISC-V instruction synchronization and entry dispatch are
+shimmed. Flash admission/update, worker, SJ_CALL and management code stay real.
+No hardware, watchdog timing or instruction emulation is claimed.
 """
 from pathlib import Path
 import os
@@ -8,77 +10,132 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-src = (ROOT / 'main/supervisor.inc').read_text()
-types = src[src.index('typedef enum { SJ_INIT'):src.index('static void supervisor_record_write_locked(')]
-record = src[src.index('static void supervisor_record_write_locked('):src.index('static void supervisor_progress(')]
-worker = src[src.index('static void supervisor_worker('):src.index('static int supervisor_submit(')]
-start_status = src[src.index('#define supervisor_init_submitted'):src.index('static bool supervisor_hex(')]
-pre = r'''
+
+HEADERS = {
+    'esp_err.h': '''#pragma once
+#include <stdint.h>
+#include <stddef.h>
+typedef int esp_err_t;
+#define ESP_OK 0
+#define ESP_FAIL -1
+#define ESP_ERR_NOT_FOUND -2
+#define ESP_ERR_INVALID_SIZE -3
+#define ESP_ERR_INVALID_STATE -4
+#define ESP_ERR_INVALID_ARG -5
+#define ESP_ERR_INVALID_VERSION -6
+#define ESP_ERR_INVALID_CRC -7
+''',
+    'esp_attr.h': '#pragma once\n#define RTC_NOINIT_ATTR\n',
+    'esp_system.h': '#pragma once\n',
+    'esp_task_wdt.h': '#pragma once\n',
+    'freertos/FreeRTOS.h': '#pragma once\n',
+    'freertos/portmacro.h': '#pragma once\n',
+    'esp_partition.h': '''#pragma once
+#include "esp_err.h"
+typedef struct {uint32_t size,address;} esp_partition_t;
+typedef unsigned esp_partition_mmap_handle_t;
+#define ESP_PARTITION_TYPE_DATA 1
+#define ESP_PARTITION_MMAP_INST 1
+''',
+    'esp_app_desc.h': '''#pragma once
+typedef struct {uint8_t app_elf_sha256[32];} esp_app_desc_t;
+''',
+    'native_mbedtls_config.h': '#define MBEDTLS_SHA256_C\n',
+}
+
+PRE = r'''
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <math.h>
+#include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
-#include "rom.h"
-#include "rmb/supervisor.h"
-#define MODULE_ABI_VERSION 2u
-#define SUPERVISOR_MAGIC UINT32_C(0x53555015)
-#define SUPERVISOR_JOB_US (1800LL*1000000)
-#define ROM_E_CAP -9
+#include <sys/select.h>
+#include <time.h>
+#include <stdatomic.h>
+#include "cJSON.h"
+#include "module_runtime.h"
+#include "esp_partition.h"
+#include "esp_app_desc.h"
+#define CONFIG_RMB_TOKEN "native-supervisor-test-token"
+#define ESP_LOGE(...) ((void)0)
 #define ESP_ERROR_CHECK(x) assert((x)==0)
+#define HEADER_US 100000LL
+#define UPLOAD_US 100000LL
+#define REQUEST_MAX 1024
 #define pdTRUE 1
 #define pdMS_TO_TICKS(x) (x)
+#define portMAX_DELAY -1
+#define portMUX_TYPE pthread_mutex_t
+#define portMUX_INITIALIZER_UNLOCKED PTHREAD_MUTEX_INITIALIZER
 #define portENTER_CRITICAL(x) pthread_mutex_lock(x)
 #define portEXIT_CRITICAL(x) pthread_mutex_unlock(x)
-typedef void *SemaphoreHandle_t;
-typedef rmb_supervisor_record supervisor_record;
-static supervisor_record supervisor_rtc;
-static pthread_mutex_t supervisor_lock=PTHREAD_MUTEX_INITIALIZER;
-static bool supervisor_active,supervisor_fault,supervisor_updating,supervisor_reboot_required;
-static rmb_supervisor_entry supervisor_entry={.captured=true,.allowed=true};
-#define module_allowed_this_boot (supervisor_entry.allowed)
-static bool module_runtime_update_allowed(void) {return !module_allowed_this_boot;}
-static uint32_t supervisor_stage,supervisor_uploaded;
-static int64_t supervisor_started,supervisor_last_progress,supervisor_limit_us;
-static int supervisor_queue=1;
-static const rom_device *device;
+typedef int TaskHandle_t;
+typedef int QueueHandle_t;
+typedef struct {pthread_mutex_t lock;pthread_cond_t changed;bool set;} native_sem;
+typedef native_sem *SemaphoreHandle_t;
 static pthread_mutex_t qlock=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t changed=PTHREAD_COND_INITIALIZER;
 static void *queued;
-static bool entered,reject_queue;
-static int feeds;
+static bool reject_queue,entered,hang_entry;
+static atomic_int feeds;
+static _Thread_local int current_task;
+static int xTaskGetCurrentTaskHandle(void) {return current_task;}
 static int64_t esp_timer_get_time(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (int64_t)t.tv_sec*1000000+t.tv_nsec/1000;}
 static int esp_task_wdt_add(void *p) {(void)p;return 0;}
-static int esp_task_wdt_reset(void) {feeds++;return 0;}
-static void vTaskDelay(int n) {(void)n;assert(!"unexpected hang test");}
-static void xSemaphoreGive(void *p) {(void)p;assert(!"INIT must not borrow a semaphore");}
-static int module_runtime_init(void) {
- pthread_mutex_lock(&qlock);entered=true;pthread_cond_broadcast(&changed);
- /* Deliberately never complete entry: management must still respond. */
- for(;;) pthread_cond_wait(&changed,&qlock);
- return 0;
-}
-#define module_rom_validate(...) 0
-#define module_rom_download_traced(...) 0
-#define module_rom_probe(...) 0
-#define module_rom_restart(...) 0
-static bool module_runtime_ready(void) {return false;}
-static bool module_runtime_busy(void) {return false;}
-static uintptr_t module_runtime_text_address(void) {return UINT32_C(0x42012340);}
-static uintptr_t module_runtime_data_address(void) {return UINT32_C(0x3fc90000);}
+static int esp_task_wdt_reset(void) {atomic_fetch_add(&feeds,1);return 0;}
+static void vTaskDelay(int n) {assert(n==100); /* Native restart returns to verify ordering. */}
 static int esp_reset_reason(void) {return 0;}
-static bool reply(int fd,const char *s) {return write(fd,s,strlen(s))==(ssize_t)strlen(s);}
+static int restarted,sequence,invalidated_at,restarted_at;
+static void esp_restart(void) {restarted++;restarted_at=++sequence;}
+static SemaphoreHandle_t xSemaphoreCreateBinary(void) {
+ native_sem *s=calloc(1,sizeof *s);assert(s);assert(!pthread_mutex_init(&s->lock,NULL));assert(!pthread_cond_init(&s->changed,NULL));return s;
+}
+static void xSemaphoreGive(native_sem *s) {pthread_mutex_lock(&s->lock);s->set=true;pthread_cond_signal(&s->changed);pthread_mutex_unlock(&s->lock);}
+static void xSemaphoreTake(native_sem *s,int ticks) {assert(ticks==portMAX_DELAY);pthread_mutex_lock(&s->lock);while(!s->set)pthread_cond_wait(&s->changed,&s->lock);pthread_mutex_unlock(&s->lock);}
+static void vSemaphoreDelete(native_sem *s) {pthread_mutex_destroy(&s->lock);pthread_cond_destroy(&s->changed);free(s);}
+static unsigned char flash[0x100000];
+static const esp_partition_t partition={sizeof flash,0x220000};
+static int erase_error,write_error;
+static unsigned body_writes,body_erases;
+static const esp_partition_t *esp_partition_find_first(int a,int b,const char *n) {assert(a==1&&b==0x41&&!strcmp(n,"business"));return &partition;}
+static int esp_partition_read(const esp_partition_t *p,size_t o,void *d,size_t n) {assert(p==&partition&&o+n<=sizeof flash);memcpy(d,flash+o,n);return 0;}
+static int esp_partition_erase_range(const esp_partition_t *p,size_t o,size_t n) {assert(p==&partition&&o+n<=sizeof flash&&!(o%4096)&&!(n%4096));if(erase_error)return -1;if(o<sizeof flash-4096)body_erases++;else invalidated_at=++sequence;memset(flash+o,255,n);return 0;}
+static int esp_partition_write(const esp_partition_t *p,size_t o,const void *v,size_t n) {assert(p==&partition&&o+n<=sizeof flash);if(write_error)return -1;if(o<sizeof flash-4096)body_writes++;const uint8_t *b=v;for(size_t i=0;i<n;i++){assert((flash[o+i]&b[i])==b[i]);flash[o+i]&=b[i];}return 0;}
+static int esp_partition_mmap(const esp_partition_t *p,size_t o,size_t n,int mode,const void **v,unsigned *h) {assert(p==&partition&&!o&&n==sizeof flash&&mode==1);*v=(void *)(uintptr_t)0x42200000;*h=1;return 0;}
+static void esp_partition_munmap(unsigned h) {assert(h==1);}
+static const esp_app_desc_t *esp_app_get_description(void) {static const esp_app_desc_t a={{0}};return &a;}
+static int native_module_entry(const rmb_host *h) {
+ assert(h->abi==4&&h->size==sizeof *h);
+ pthread_mutex_lock(&qlock);entered=true;pthread_cond_broadcast(&changed);
+ while(hang_entry)pthread_cond_wait(&changed,&qlock);
+ pthread_mutex_unlock(&qlock);return 0;
+}
+static bool pending_fault;
+static void service_fault_status(int fd);
+static bool service_fault_ack(uint32_t seq) {if(!pending_fault||seq!=7)return false;pending_fault=false;return true;}
+static void service_supervisor_fault(uint32_t reason,bool entry,uint32_t checkpoint,int64_t began,int64_t progress,int64_t limit,int64_t now) {(void)reason;(void)entry;(void)checkpoint;(void)began;(void)progress;(void)limit;(void)now;pending_fault=true;}
+static bool service_watchdog_begin_init(void) {return true;}
+static void service_watchdog_finish_init(void) {}
+static void service_watchdog_abort_init(void) {}
+static bool service_fault_pending(void) {return pending_fault;}
+void rmb_network_init_begin(void) {}
+bool rmb_network_init_commit(void) {return true;}
+void rmb_network_init_abort(void) {}
+bool module_watchdog_configured(void) {return true;}
+void module_host_configure(rmb_host *h) {(void)h;}
 '''
-queue = r'''
+
+QUEUE = r'''
 static int xQueueSend(int q,supervisor_job **p,int ticks) {
  (void)q;(void)ticks;pthread_mutex_lock(&qlock);
- if(queued || reject_queue){pthread_mutex_unlock(&qlock);return 0;}
+ if(queued||reject_queue){pthread_mutex_unlock(&qlock);return 0;}
  queued=*p;pthread_cond_broadcast(&changed);pthread_mutex_unlock(&qlock);return pdTRUE;
 }
 static int xQueueReceive(int q,supervisor_job **p,int ticks) {
@@ -87,48 +144,108 @@ static int xQueueReceive(int q,supervisor_job **p,int ticks) {
  *p=queued;queued=NULL;pthread_mutex_unlock(&qlock);return pdTRUE;
 }
 '''
-post = r'''
-static void *thread(void *arg) {supervisor_worker(arg);return NULL;}
-int main(void) {
- (void)device;
- pthread_t t;assert(!pthread_create(&t,NULL,thread,NULL));
- module_allowed_this_boot=false;assert(supervisor_start()==ROM_E_CAP);
- {int f[2];char out[1024];assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));
-  supervisor_status(f[1]);ssize_t n=read(f[0],out,sizeof out-1);assert(n>0);out[n]=0;
-  assert(strstr(out,"\"update_mode\":true")&&strstr(out,"\"module_ready\":false"));
-  supervisor_reboot_required=true;supervisor_status(f[1]);n=read(f[0],out,sizeof out-1);assert(n>0);out[n]=0;
-  assert(strstr(out,"\"update_mode\":false")&&strstr(out,"\"module_ready\":false"));
-  assert(supervisor_start()==ROM_E_CAP);close(f[0]);close(f[1]);supervisor_reboot_required=false;}
- module_allowed_this_boot=true;
- reject_queue=true;assert(supervisor_start()==ROM_E_IO);
- assert(!supervisor_init_submitted && !supervisor_active && !supervisor_rtc.active);
- reject_queue=false;
- assert(supervisor_start()==0); /* Returns WITHOUT waiting on entry. */
- pthread_mutex_lock(&qlock);while(!entered)pthread_cond_wait(&changed,&qlock);pthread_mutex_unlock(&qlock);
- assert(supervisor_init_submitted&&supervisor_active&&supervisor_rtc.active);
- assert(rmb_supervisor_record_valid(&supervisor_rtc));
- assert(feeds==1); /* No automatic worker feed while stuck in entry. */
- assert(supervisor_start()==ROM_E_CAP); /* Static job never overwritten. */
- int f[2];assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));
- for(unsigned i=0;i<20;i++) {
-  supervisor_status(f[1]);char out[1024];ssize_t n=read(f[0],out,sizeof out-1);assert(n>0);out[n]=0;
-  assert(strstr(out,"\"supervisor\":17")&&strstr(out,"\"busy\":true")&&strstr(out,"\"module_ready\":false"));
-  assert(strstr(out,"\"update_mode\":false"));
-  assert(strstr(out,"\"text_address\":1107370816")&&strstr(out,"\"data_address\":1070137344"));
- }
- puts("PASS production async INIT/worker/status: hung entry, retained RTC active+CRC, 20 management replies, one-shot static job, no worker feed");
- return 0;
+
+SUPPORT = r'''
+bool module_service_available(void) {return !supervisor_fault;}
+static void service_fault_status(int fd) {reply(fd,pending_fault?"{\"ok\":true,\"pending\":true}\n":"{\"ok\":true,\"pending\":false}\n");}
+static void *thread(void *arg) {current_task=1;supervisor_worker(arg);return NULL;}
+static void reset_boot(bool committed) {
+ memset(flash,255,sizeof flash);if(committed)memset(flash+sizeof flash-4096,0,4096);
+ mapped_base=NULL;reserved_base=0;memset(&update,0,sizeof update);attempted=false;
+ atomic_store(&admitted,false);busy=installing=slot_invalid=false;
+ supervisor_entry=(rmb_supervisor_entry){0};supervisor_fault=supervisor_active=supervisor_updating=supervisor_reboot_required=false;
+ assert(module_runtime_prepare()==0);
+ rmb_supervisor_entry_capture(&supervisor_entry,!module_runtime_update_allowed());
+ supervisor_queue=1;supervisor_worker_handle=1;
+}
+static void image(uint8_t out[76]) {
+ module_header h={MODULE_MAGIC,4,sizeof h,76,0x42200028,4,(uint32_t)(uintptr_t)module_data_reserve,32,4,0x42200028};
+ memcpy(out,&h,sizeof h);memset(out+sizeof h,0,36);
 }
 '''
-with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as d:
-    p = Path(d)
-    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
-                    '-fsanitize=undefined', '-fno-sanitize-recover=all',
-                    '-I'+str(ROOT.parent/'include'), '-I'+str(ROOT.parent/'rom'),
-                    str(ROOT/'tests/test_supervisor_core.c'),
-                    str(ROOT.parent/'core/supervisor.c'), str(ROOT.parent/'rom/rom.c'),
-                    '-o', str(p/'core')], check=True)
-    subprocess.run([str(p/'core')], check=True, timeout=5)
-    (p / 'startup.c').write_text(pre + types + queue + record + worker + start_status + post)
-    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread', '-I'+str(ROOT.parent/'rom'), '-I'+str(ROOT.parent/'include'), str(ROOT.parent/'core/supervisor.c'), str(p/'startup.c'), '-o', str(p/'startup')], check=True)
-    subprocess.run([str(p/'startup')], check=True, timeout=5)
+
+
+def build_run(post):
+    """Compile live production sources with explicit, checked native seams."""
+    import sys
+    sys.path.insert(0, str(ROOT.parent / 'tools'))
+    from native_deps import cjson
+    cj = cjson()
+    mbed = Path(os.environ['IDF_PATH']) / 'components/mbedtls/mbedtls'
+    source = (ROOT / 'main/supervisor.inc').read_text()
+    service = (ROOT / 'main/service.c').read_text()
+    runtime = (ROOT / 'main/module_runtime.c').read_text()
+    # Native CPUs cannot execute RISC-V fence.i or the uploaded entry address.
+    fence = '__asm__ volatile("fence.i" ::: "memory")'
+    entry = '((module_entry_fn)(uintptr_t)h.entry)(&host)'
+    assert runtime.count(fence) == runtime.count(entry) == 1
+    runtime = runtime.replace(fence, 'atomic_thread_fence(memory_order_seq_cst)')
+    runtime = runtime.replace(entry, 'native_module_entry(&host)')
+    helpers = service[service.index('bool authenticated('):service.index('#include "streams.inc"')]
+    types = source[source.index('typedef rmb_supervisor_record'):source.index('static void supervisor_record_write_locked(')]
+    implementation = source[source.index('static void supervisor_record_write_locked('):source.index('static void supervisor_management(')]
+    # Unused monitor declaration belongs to the deliberately excluded IDF task.
+    with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as d:
+        p = Path(d)
+        for name, text in HEADERS.items():
+            target = p / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
+        (p / 'native.c').write_text(PRE + runtime + helpers + '\n#include "rmb/supervisor.h"\n#define SUPERVISOR_JOB_US (1800LL*1000000)\n' + types + QUEUE + implementation + SUPPORT + post)
+        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
+                        '-Wno-pointer-to-int-cast', '-fno-pie', '-no-pie', '-pthread', '-fsanitize=undefined',
+                        '-DMBEDTLS_CONFIG_FILE="native_mbedtls_config.h"', '-I'+str(mbed/'include'),
+                        '-fno-sanitize-recover=all', '-I'+str(p), '-I'+str(cj),
+                        '-I'+str(ROOT/'main'), '-I'+str(ROOT.parent/'include'),
+                        str(p/'native.c'), str(ROOT.parent/'core/update.c'),
+                        str(ROOT.parent/'core/supervisor.c'), str(cj/'cJSON.c'),
+                        str(mbed/'library/sha256.c'), str(mbed/'library/platform_util.c'),
+                        '-lm', '-o', str(p/'native')], check=True)
+        subprocess.run([str(p/'native')], check=True, timeout=10)
+
+
+POST = r'''
+static int __attribute__((aligned(4))) job(void *p) {assert(current_task==1);assert(supervisor_run(job,p,1)==-1);supervisor_progress();return ++*(int *)p;}
+int main(void) {
+ reset_boot(false);assert(supervisor_start()==-1);
+ uint8_t body[76];image(body);uint8_t digest[32];
+ assert(!mbedtls_sha256(body,sizeof body,digest,0));
+ assert(!module_runtime_install_begin(sizeof body));assert(!module_runtime_install_write(0,body,sizeof body));assert(!module_runtime_install_finish(digest));
+ assert(!module_runtime_update_allowed()&&!module_runtime_ready()&&!entered);
+ /* A real reset is required before any entry, even with a committed footer. */
+ mapped_base=NULL;reserved_base=0;memset(&update,0,sizeof update);assert(!module_runtime_prepare());
+ supervisor_entry=(rmb_supervisor_entry){0};rmb_supervisor_entry_capture(&supervisor_entry,true);
+ pthread_t t;assert(!pthread_create(&t,NULL,thread,NULL));
+ reject_queue=true;assert(supervisor_start()==-1);assert(!supervisor_init_submitted&&!supervisor_active&&!supervisor_rtc.active);reject_queue=false;
+ /* First exercise the generic synchronous SJ_CALL path and borrowed context. */
+ assert(!module_runtime_init());int value=40;
+ /* Native callback provenance uses actual production range validation. */
+ admitted_header.text_addr=(uint32_t)(uintptr_t)job;
+ admitted_header.text_size=4;
+ /* The native binary is non-PIE so callback/data addresses fit ABI4 uint32_t;
+  * only the admitted native callback range is substituted after real entry. */
+ assert(supervisor_run(NULL,&value,1)==-1);
+ assert(supervisor_run(job,&value,0)==-1);
+ assert(supervisor_run(job,&value,SUPERVISOR_JOB_US+1)==-1);
+ assert(module_runtime_code_pointer((const void *)job));
+ assert(supervisor_run(job,&value,123456)==41&&value==41&&!supervisor_active);
+ assert(supervisor_stage==1&&supervisor_limit_us==123456&&rmb_supervisor_record_valid(&supervisor_rtc));
+ /* New boot: INIT deliberately blocks in the explicit native entry shim. */
+ attempted=false;atomic_store(&admitted,false);entered=false;hang_entry=true;
+ supervisor_entry=(rmb_supervisor_entry){.captured=true,.allowed=true};
+ assert(!supervisor_start());pthread_mutex_lock(&qlock);while(!entered)pthread_cond_wait(&changed,&qlock);pthread_mutex_unlock(&qlock);
+ assert(supervisor_init_submitted&&supervisor_active&&supervisor_rtc.active&&rmb_supervisor_record_valid(&supervisor_rtc));
+ int before=atomic_load(&feeds);assert(supervisor_start()==-1);
+ int f[2];assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));
+ for(unsigned i=0;i<20;i++) {char out[1024];const char *request="{\"token\":\"native-supervisor-test-token\",\"op\":\"status\"}\n";assert(write(f[0],request,strlen(request))==(ssize_t)strlen(request));supervisor_serve(f[1]);ssize_t got=read(f[0],out,sizeof out-1);assert(got>0);out[got]=0;
+ assert(strstr(out,"\"supervisor\":17")&&strstr(out,"\"module_abi\":4")&&strstr(out,"\"busy\":true")&&strstr(out,"\"module_ready\":false")&&strstr(out,"\"update_mode\":false"));
+ assert(strstr(out,"\"text_address\":1109393448"));
+ char expected[80];snprintf(expected,sizeof expected,"\"data_address\":%lu",(unsigned long)module_runtime_data_address());assert(strstr(out,expected));
+ }
+ assert(atomic_load(&feeds)==before);close(f[0]);close(f[1]);
+ puts("PASS production ABI4 runtime + supervisor: real commit/admission, generic SJ_CALL/context/progress, hung async INIT, retained RTC CRC, 20 management replies, no worker feed");return 0;
+}
+'''
+
+if __name__ == '__main__':
+    build_run(POST)

@@ -36,6 +36,13 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(manifest, self.manifest)
             self.assertEqual(sources, [self.root / 'hello.c'])
 
+    def test_real_hello_manifests(self):
+        for variant, name in ((1, 'A'), (2, 'B')):
+            manifest, sources = builder.load_manifest(Path(__file__).parent / (name + '.json'))
+            self.assertEqual(manifest['defines'], {'SERVICE_VARIANT': variant})
+            self.assertEqual([p.name for p in sources], ['service.c', 'platform_idf.c'])
+            self.assertEqual(manifest['drivers'], [])
+
     def test_reject_names(self):
         for name in ('', '../escape', 'a b', 'a;cmd', 'a\n', 'é', 1, None):
             with self.subTest(name=name):
@@ -107,6 +114,15 @@ class ManifestTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 builder.validate_binding(symbols, 0x3fc80000, data)
 
+    def test_symbol_proof_shadow_and_weak(self):
+        base = {'socket_exact': (0x42000100, 'T'), 'weak_api': (0x40001000, 'W')}
+        symbols = {'socket_exact': (0x42000100, 'A'), 'weak_api': (0x40001000, 'W')}
+        relocs = ('42100040 00000113 R_RISCV_CALL_PLT 42100080 socket_exact + 0\n'
+                  '42100044 00000213 R_RISCV_CALL_PLT 40001000 weak_api + 0\n')
+        imports, _ = builder.symbol_proof(symbols, base, relocs)
+        self.assertNotIn('socket_exact', imports)
+        self.assertIn('weak_api', imports)
+
     def test_symbol_proof(self):
         symbols = {'used': (0x4000, 'A'), 'unused': (0x4004, 'A'),
                    'module_entry': (0x42000028, 'T'), 'module_data': (0x3fc80020, 'D')}
@@ -139,7 +155,7 @@ class ManifestTests(unittest.TestCase):
             commands.append(cmd)
             kind = cmd[0].removeprefix('test-')
             if kind == 'gcc' and '-dM' in cmd:
-                return '#define MODULE_ABI_VERSION 3\n#define MODULE_DRAM_SIZE 32768\n'
+                return '#define RMB_SERVICE_ABI 4u\n#define MODULE_ABI_VERSION RMB_SERVICE_ABI\n#define MODULE_DRAM_SIZE 32768\n'
             if kind == 'gcc' and '-Wl,--start-group' in cmd:
                 (out.parent / 'module-link/business.map').write_text('')
                 return ''

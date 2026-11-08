@@ -1,5 +1,7 @@
 #include "module_runtime.h"
 #include "rmb/update.h"
+#include "generic_network.h"
+#include <stdatomic.h>
 #include <string.h>
 #include "esp_partition.h"
 #include "esp_attr.h"
@@ -13,22 +15,23 @@ static const void *mapped_base;
 static esp_partition_mmap_handle_t mapped_handle;
 static uintptr_t reserved_base;
 uint8_t module_data_reserve[MODULE_DRAM_SIZE] __attribute__((section(".dram1.module_reserve"),aligned(16)));
-static module_host host={.abi=MODULE_ABI_VERSION,.size=sizeof(module_host)};
-extern void module_host_configure(module_host *);
+static rmb_host host={.abi=MODULE_ABI_VERSION,.size=sizeof(rmb_host)};
+extern void module_host_configure(rmb_host *);
+extern bool module_service_available(void);
+extern bool module_watchdog_configured(void);
 static bridge_update update;
 static bridge_storage_ops storage;
 static esp_err_t storage_prepare(const esp_partition_t *p);
 static esp_err_t remap(void);
 bool module_runtime_update_allowed(void) { return bridge_update_allowed(&update); }
-static const module_ops *ops;
-static portMUX_TYPE lock=portMUX_INITIALIZER_UNLOCKED;
+static atomic_bool admitted;
+static bool attempted;
+static module_header admitted_header;
 static bool busy,installing,slot_invalid;
 static const esp_partition_t *part(void) { return esp_partition_find_first(ESP_PARTITION_TYPE_DATA,0x41,"business"); }
-static bool take(void) { bool ok; portENTER_CRITICAL(&lock);ok=!busy&&!installing&&ops;if(ok)busy=true;portEXIT_CRITICAL(&lock);return ok; }
-static void drop(void) {portENTER_CRITICAL(&lock);busy=false;portEXIT_CRITICAL(&lock);}
-bool module_runtime_ready(void) { return ops!=NULL&&!installing&&!slot_invalid; }
+bool module_runtime_ready(void) { return atomic_load(&admitted)&&!installing&&!slot_invalid&&module_service_available(); }
 bool module_runtime_busy(void) { return busy; }
-const char *module_runtime_info(void) { return module_runtime_ready()?"flash-xip-abi2-ready":"module-unavailable"; }
+const char *module_runtime_info(void) { return module_runtime_ready()?"flash-xip-abi4-ready":"module-unavailable"; }
 uintptr_t module_runtime_text_address(void) { return reserved_base?reserved_base+sizeof(module_header):0; }
 uintptr_t module_runtime_data_address(void) { return (uintptr_t)module_data_reserve; }
 /* Call before NVS/Wi-Fi and any other dynamic mappings, even with erased flash.
@@ -59,17 +62,20 @@ static esp_err_t sane(const esp_partition_t *p,module_header *h) {
  if(memcmp(binding,esp_app_get_description()->app_elf_sha256,sizeof binding))return ESP_ERR_INVALID_VERSION;
  return ESP_OK;
 }
-static bool codeptr(const void *p,const module_header *h) {return (uintptr_t)p>=h->text_addr&&(uintptr_t)p<h->text_addr+h->text_size&&!((uintptr_t)p&1);}
+bool module_runtime_code_pointer(const void *p) {
+ uintptr_t v=(uintptr_t)p;
+ return attempted && v>=admitted_header.text_addr && v-admitted_header.text_addr<admitted_header.text_size && !(v&1);
+}
 static esp_err_t load(const esp_partition_t *p) {
  module_header h;esp_err_t e=sane(p,&h);if(e)return e;
- /* Only the supervised worker calls load/entry; never the upload manager.
-  * Instructions already reside in the managed executable flash mapping. */
  e=esp_partition_read(p,sizeof h+h.text_size,module_data_reserve,h.data_size);if(e)return e;
  memset(module_data_reserve+h.data_size,0,h.bss_size);__asm__ volatile("fence.i" ::: "memory");
- module_host_configure(&host);
- const module_ops *v=((module_entry_fn)(uintptr_t)h.entry)(&host);
- if(((uintptr_t)v&3)||(uintptr_t)v<(uintptr_t)module_data_reserve||(uintptr_t)v>(uintptr_t)module_data_reserve+MODULE_DRAM_SIZE-sizeof *v||v->abi!=MODULE_ABI_VERSION||v->size!=sizeof *v||!codeptr(v->validate,&h)||!codeptr(v->download,&h)||!codeptr(v->probe,&h)||!codeptr(v->restart,&h)||!codeptr(v->dispatch,&h))return ESP_ERR_INVALID_ARG;
- ops=v;slot_invalid=false;return ESP_OK;
+ admitted_header=h;module_host_configure(&host);rmb_network_init_begin();
+ int result=((module_entry_fn)(uintptr_t)h.entry)(&host);
+ if(result || !module_watchdog_configured() || !rmb_network_init_commit()) {
+  rmb_network_init_abort();return ESP_FAIL;
+ }
+ slot_invalid=false;atomic_store(&admitted,true);return ESP_OK;
 }
 /* ESP adapter owns partition discovery, SHA implementation and XIP admission.
  * Portable core owns footer, immutable boot latch and all transfer transitions. */
@@ -108,8 +114,8 @@ static esp_err_t storage_prepare(const esp_partition_t *p) {
  return sdk_error(bridge_update_boot(&update));
 }
 esp_err_t module_runtime_init(void) {
- if(busy||installing)return ESP_ERR_INVALID_STATE;
- ops=NULL;esp_err_t e=module_runtime_prepare();if(e)return e;
+ if(attempted||busy||installing)return ESP_ERR_INVALID_STATE;
+ attempted=true;atomic_store(&admitted,false);esp_err_t e=module_runtime_prepare();if(e)return e;
  if(!bridge_execution_allowed(&update))return ESP_ERR_INVALID_STATE;
  e=sdk_error(bridge_footer_verify(&update,0));return e?e:load(part());
 }
@@ -119,7 +125,7 @@ esp_err_t module_runtime_invalidate(void) {
  e=sdk_error(bridge_update_invalidate(&update));installing=false;if(!e)slot_invalid=true;return e;
 }
 esp_err_t module_runtime_install_begin(size_t n) {
- if(!module_runtime_update_allowed()||ops||busy)return ESP_ERR_INVALID_STATE;
+ if(!module_runtime_update_allowed()||attempted||busy)return ESP_ERR_INVALID_STATE;
  esp_err_t e=module_runtime_prepare();if(e)return e;
  e=sdk_error(bridge_update_begin(&update,n));installing=update.installing;return e;
 }
@@ -129,12 +135,3 @@ esp_err_t module_runtime_install_write(size_t o,const void *d,size_t n) {
 esp_err_t module_runtime_install_finish(const uint8_t digest[32]) {
  int e=bridge_update_finish(&update,digest);installing=update.installing;return sdk_error(e);
 }
-int module_rom_validate(const rom_device *d,const rom_source *s,uint32_t n,uint32_t c,int r){if(!take())return ROM_E_CAP;int e=ops->validate(d,s,n,c,r);drop();return e;}
-int module_rom_download_traced(const rom_io *i,const rom_device *d,const rom_source *s,uint32_t n,uint32_t c,int r,rom_trace_fn t,void *x){if(!take())return ROM_E_CAP;int e=ops->download(i,d,s,n,c,r,t,x);drop();return e;}
-int module_rom_probe(const rom_io *i,const rom_device *d,rom_probe_result *r,rom_trace_fn t,void *x){if(!take())return ROM_E_CAP;int e=ops->probe(i,d,r,t,x);drop();return e;}
-int module_rom_restart(const rom_io *i){if(!take())return ROM_E_CAP;int e=ops->restart(i);drop();return e;}
-/* Only resident utilities, NOT a fallback implementation of business ops. */
-uint32_t rom_crc32(const uint8_t *p,size_t n){uint32_t c=~0u;while(n--){c^=*p++;for(int k=0;k<8;k++)c=(c>>1)^((0u-(c&1u))&0xedb88320u);}return ~c;}
-const char *rom_strerror(int e){switch(e){case 0:return "ok";case ROM_E_CAP:return "module unavailable or missing ROM capability";case ROM_E_ARG:return "invalid argument";case ROM_E_CRC:return "image CRC mismatch";case ROM_E_VECTOR:return "invalid stack/reset vector";case ROM_E_IO:return "UART/GPIO I/O failed";case ROM_E_TIMEOUT:return "UART timeout";case ROM_E_ACK:return "ROM NACK/unexpected ACK";case ROM_E_ID:return "unexpected device ID";case ROM_E_VERIFY:return "readback mismatch";default:return "ROM operation failed";}}
-
-int module_runtime_dispatch(uint32_t channel,void *argument) { if(!ops||installing)return -1;return ops->dispatch(channel,argument); }

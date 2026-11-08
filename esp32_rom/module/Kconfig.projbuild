@@ -1,0 +1,30 @@
+menu "STM32 ROM target hardware"
+choice ROM_SERVICE_DEVICE
+    prompt "Target part (geometry, ID, RAM footprint)"
+    default ROM_SERVICE_DEVICE_F407ZG
+config ROM_SERVICE_DEVICE_F407ZG
+    bool "STM32F407ZG: 1 MiB, 4x16K+64K+7x128K sectors, RAM image at 0x20004000"
+config ROM_SERVICE_DEVICE_F103C8
+    bool "STM32F103C8: 64 KiB, 1 KiB pages, ROM uses 512 B, RAM image at 0x20000400"
+endchoice
+config ROM_SERVICE_TX
+    int "UART1 TX -> STM32 ROM USART RX GPIO"
+    range -1 21
+    default -1
+config ROM_SERVICE_RX
+    int "UART1 RX <- STM32 ROM USART TX GPIO"
+    range -1 21
+    default -1
+config ROM_SERVICE_BOOT0
+    int "STM32 BOOT0 GPIO"
+    range -1 21
+    default -1
+config ROM_SERVICE_BOOT1
+    int "STM32 BOOT1 GPIO (-1: externally tied low)"
+    range -1 21
+    default -1
+config ROM_SERVICE_NRST
+    int "STM32 NRST open-drain GPIO (external pull-up required)"
+    range -1 21
+    default -1
+endmenu

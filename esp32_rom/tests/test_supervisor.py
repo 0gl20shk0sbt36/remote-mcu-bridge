@@ -66,11 +66,14 @@ class SupervisorTests(unittest.TestCase):
     def test_resident_contracts(self):
         serve = SOURCE[SOURCE.index('static void supervisor_serve('):SOURCE.index('static void supervisor_management(')]
         self.assertLess(serve.index('authenticated(token->valuestring)'), serve.index('module_runtime_install_begin(size)'))
-        self.assertLess(serve.index('control_acquire()'), serve.index('module_runtime_install_begin(size)'))
+        self.assertLess(serve.index('supervisor_active || module_runtime_busy()'), serve.index('module_runtime_install_begin(size)'))
+        self.assertNotIn('control_acquire', serve)
         self.assertLess(serve.index('module_runtime_install_begin(size)'), serve.index('module_runtime_install_write('))
         self.assertLess(serve.index('module_runtime_install_write('), serve.index('module_runtime_install_finish('))
         self.assertIn('seen!=15', serve)
         self.assertIn('seen!=3', serve)
+        self.assertIn('seen!=19', serve)
+        self.assertIn('service_fault_ack(seq)', serve)
         self.assertIn('UPLOAD_US', serve)
         self.assertIn('module_runtime_invalidate()', serve)
         self.assertIn('RTC_NOINIT_ATTR', SOURCE)
@@ -80,11 +83,13 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn('xSemaphoreTake(job->done,portMAX_DELAY)', SOURCE)
         self.assertIn('.trigger_panic=true', SOURCE)
         self.assertIn('for(;;) vTaskDelay(1)', SOURCE)
-        self.assertIn('if(owned) control_release()', SOURCE)
+        self.assertIn('supervisor_updating=false', SOURCE)
+        self.assertNotIn('control_release', SOURCE)
         for call in ('rom_validate(', 'rom_download_traced(', 'rom_probe(', 'rom_restart('):
             self.assertNotIn('= '+call, SERVICE)
         self.assertIn('if (remaining > 250000)', BUSINESS)
-        self.assertIn('supervisor_status(fd)', BUSINESS)
+        self.assertIn('service_status(fd)', BUSINESS)
+        self.assertNotIn('supervisor_status(fd)', BUSINESS)
 
     def test_xip_activation_contracts(self):
         setup = SOURCE[SOURCE.index('static void supervisor_init(void)'):]

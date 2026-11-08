@@ -1,2 +1,2 @@
 # Public compile-only baseline. No device/network operations are performed.
-# CONFIG_ROM_SERVICE_ENABLE is not set
+# CONFIG_RMB_ENABLE is not set

@@ -8,7 +8,7 @@ cd "$ROOT"
 CJSON=$(python3 -c 'from tools.native_deps import cjson; print(cjson())')
 for variant in 1 2; do
   gcc -std=c11 -g -fsanitize=address,undefined -DSERVICE_VARIANT="$variant" \
-    -Irom -Iesp32_rom/main -I"$CJSON" \
+    -I"$ROOT/include" -I"$CJSON" \
     examples/services/hello/service.c examples/services/hello/test_service.c \
     "$CJSON/cJSON.c" -lm -o "$OUT/hello-$variant"
   "$OUT/hello-$variant"

@@ -1,13 +1,10 @@
 /* Trusted LAN only: plaintext authentication, no TLS. ESP-IDF 5.x / ESP32-C3. */
-#include <errno.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/select.h>
-#include <unistd.h>
 #include "sdkconfig.h"
 #include "cJSON.h"
 #include "driver/gpio.h"
@@ -15,44 +12,73 @@
 #include "platform/esp_idf_io.h"
 #include "logic/spi_diagnostic.h"
 #include "soc/uart_reg.h"
-#include "esp_event.h"
 #include "esp_log.h"
-#include "esp_mac.h"
-#include "esp_netif.h"
 #include "esp_partition.h"
 #include "esp_timer.h"
-#include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/event_groups.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
-#include "lwip/inet.h"
-#include "nvs_flash.h"
 #include "rom.h"
 
-#include "module_runtime.h"
-#include "stream_ring.h"
 static const char *TAG="business";
-static const module_host *host;
-extern bool authenticated(const char *);
-extern bool socket_exact(int,void *,size_t,bool,int64_t);
-extern bool reply(int,const char *);
-extern void failure(int,const char *);
-extern bool number(cJSON *,uint32_t *);
+#include "rmb/service.h"
+static const rmb_host *host;
+/* Only the serial control callback and its supervised worker share control.
+ * No root task ever feeds either active callback lease. */
+static int root_lease=-1, control_lease=-1, uart_lease=-1;
+static _Atomic(TaskHandle_t) uart_callback_task;
+static void service_progress(void) {
+ if(control_lease>=0) (void)host->watchdog_feed(control_lease,(uint32_t)host->now_us());
+ host->progress();
+}
+static void service_io_progress(void) {
+ int lease=xTaskGetCurrentTaskHandle()==atomic_load_explicit(&uart_callback_task,memory_order_relaxed)?uart_lease:control_lease;
+ if(lease>=0) (void)host->watchdog_feed(lease,(uint32_t)host->now_us());
+ host->progress();
+}
+static void service_events(void *context) {
+ (void)context;
+ for(;;) {
+  /* Running this idle/event-loop iteration is root progress, not callback progress. */
+  (void)host->watchdog_feed(root_lease,(uint32_t)host->now_us());
+  vTaskDelay(pdMS_TO_TICKS(250)?pdMS_TO_TICKS(250):1);
+ }
+}
+#include "service_net.h"
 static const rom_device *device;
 static const esp_partition_t *staging;
 static SemaphoreHandle_t uart_owner;
 #define REQUEST_MAX 1024
 #define HEADER_US 10000000LL
 #define UPLOAD_US 180000000LL
-#define supervisor_progress() host->progress()
-#define supervisor_status(fd) host->status(fd)
-#define supervisor_validate host->validate
-#define supervisor_download host->download
-#define supervisor_probe host->probe
-#define supervisor_restart host->restart
-#define supervisor_fault (!host->available())
+#define supervisor_progress() service_progress()
+typedef enum { JOB_VALIDATE, JOB_DOWNLOAD, JOB_PROBE, JOB_RESTART } rom_job_kind;
+typedef struct {
+ rom_job_kind kind;const rom_io *io;const rom_device *device;const rom_source *source;
+ uint32_t size,crc;int ram;rom_probe_result *result;rom_trace_fn trace;void *trace_ctx;
+} rom_job;
+static int rom_work(void *context) {
+ rom_job *j=context;service_progress();
+ switch(j->kind) {
+ case JOB_VALIDATE:return rom_validate(j->device,j->source,j->size,j->crc,j->ram);
+ case JOB_DOWNLOAD:return rom_download_traced(j->io,j->device,j->source,j->size,j->crc,j->ram,j->trace,j->trace_ctx);
+ case JOB_PROBE:return rom_probe(j->io,j->device,j->result,j->trace,j->trace_ctx);
+ case JOB_RESTART:return rom_restart(j->io);
+ }return ROM_E_ARG;
+}
+/* Borrowed contexts remain live until completion or whole-chip reset. */
+static int supervised(rom_job *j) {return host->run(rom_work,j,1800000000LL);}
+static int supervisor_validate(const rom_device *d,const rom_source *s,uint32_t n,uint32_t c,int r) {
+ rom_job j={.kind=JOB_VALIDATE,.device=d,.source=s,.size=n,.crc=c,.ram=r};return supervised(&j);
+}
+static int supervisor_download(const rom_io *i,const rom_device *d,const rom_source *s,uint32_t n,uint32_t c,int r,rom_trace_fn f,void *x) {
+ rom_job j={.kind=JOB_DOWNLOAD,.io=i,.device=d,.source=s,.size=n,.crc=c,.ram=r,.trace=f,.trace_ctx=x};return supervised(&j);
+}
+static int supervisor_probe(const rom_io *i,const rom_device *d,rom_probe_result *r,rom_trace_fn f,void *x) {
+ rom_job j={.kind=JOB_PROBE,.io=i,.device=d,.result=r,.trace=f,.trace_ctx=x};return supervised(&j);
+}
+static int supervisor_restart(const rom_io *i) {rom_job j={.kind=JOB_RESTART,.io=i};return supervised(&j);}
 typedef struct {
  const char *stage, *phase;
  unsigned command_index, tx_bytes, rx_bytes;
@@ -286,6 +312,11 @@ static esp_err_t target_uart_mode(unsigned baud, bool rom_mode) {
  return esp_io_uart_mode(baud,rom_mode);
 }
 #include "uart_priority.inc"
+static void service_status(int fd) {
+ char report[512];bool paused;uint32_t epoch;relay_snapshot(&paused,&epoch);
+ snprintf(report,sizeof report,"{\"ok\":true,\"device\":\"%s\",\"flash_size\":%lu,\"image_max\":%lu,\"staging_size\":%lu,\"uart_paused\":%s,\"epoch\":%lu,\"target\":\"%s\"}\n",device->name,(unsigned long)device->flash_size,(unsigned long)device->image_max,(unsigned long)staging->size,paused?"true":"false",(unsigned long)epoch,relay_target);
+ reply(fd,report);
+}
 static bool stream_auth_ex(int fd, bool uart_mode, unsigned *baud, bool *history, bool *framed) {
     *framed = false;
     char line[REQUEST_MAX+1]; size_t used = 0;
@@ -493,14 +524,12 @@ static void serve(int fd, bool *owned) {
         }
         cJSON_Delete(request);
         if (!parameters) {failure(fd,"spi-pad-sample accepts only optional pull none/up/down");return;}
-        if (supervisor_fault || !module_runtime_ready()) {failure(fd,"business module unavailable");return;}
         spi_pad_sample(fd,mode);return;
     }
     if (!strcmp(op->valuestring, "status")) {
         ESP_LOGI(TAG, "Operation received: status");
-        supervisor_status(fd); cJSON_Delete(request); return;
+        service_status(fd); cJSON_Delete(request); return;
     }
-    if (supervisor_fault || !module_runtime_ready()) { cJSON_Delete(request); failure(fd,"business module unavailable; use management TCP 3337"); return; }
     if (!strcmp(op->valuestring,"spi-test")) {
         uint32_t count=1,hz=100000;
         bool parameters=!(seen & 12) &&
@@ -543,6 +572,7 @@ static void serve(int fd, bool *owned) {
             uint8_t tail[32];unsigned total_tail=0;
             int64_t until=esp_timer_get_time()+1000000;
             while(esp_timer_get_time()<until && total_tail<4096) {
+                service_progress();
                 int got=uart_read_bytes(UART_PORT,tail,sizeof tail,pdMS_TO_TICKS(20));
                 if(got>0) {total_tail+=(unsigned)got;target_raw(&diagnostic,false,"failure-tail",tail,(size_t)got,esp_timer_get_time());}
                 target_events(&diagnostic);
@@ -586,7 +616,11 @@ static void serve(int fd, bool *owned) {
     *owned = true;
     size_t erase_size = (size + 4095U) & ~4095U;
     if (erase_size > staging->size) { failure(fd, "image does not fit the staging partition"); return; }
-    if (esp_partition_erase_range(staging, 0, erase_size) != ESP_OK) { failure(fd, "staging erase failed"); return; }
+    for(size_t offset=0;offset<erase_size;offset+=4096) {
+        service_progress();
+        if (esp_partition_erase_range(staging, offset, 4096) != ESP_OK) { failure(fd, "staging erase failed"); return; }
+        vTaskDelay(1);
+    }
     if (!reply(fd, "{\"ok\":true,\"ready\":true}\n")) return;
     ESP_LOGI(TAG, "Staging upload start bytes=%lu", (unsigned long)size);
     int64_t upload_started = esp_timer_get_time();
@@ -639,9 +673,6 @@ static bool pin_allowed(int pin, bool output) {
     return output ? GPIO_IS_VALID_OUTPUT_GPIO(pin) : GPIO_IS_VALID_GPIO(pin);
 }
 static bool configuration_valid(void) {
-    size_t n = strlen(CONFIG_ROM_SERVICE_TOKEN);
-    if (n < 16 || n > 128 || !strlen(CONFIG_ROM_SERVICE_WIFI_SSID) ||
-        strlen(CONFIG_ROM_SERVICE_WIFI_SSID) > 32 || strlen(CONFIG_ROM_SERVICE_WIFI_PASSWORD) > 64) return false;
     const int pins[] = {CONFIG_ROM_SERVICE_TX, CONFIG_ROM_SERVICE_RX, CONFIG_ROM_SERVICE_BOOT0,
                         CONFIG_ROM_SERVICE_NRST, CONFIG_ROM_SERVICE_BOOT1};
     for (unsigned i = 0; i < 5; ++i) {
@@ -652,8 +683,18 @@ static bool configuration_valid(void) {
     return true;
 }
 
-int module_business_start(const module_host *h) {
- host=h; device=h->device; staging=h->staging;
+int module_business_start(const rmb_host *h) {
+ host=h;
+ root_lease=host->watchdog_open("stm-events",5000);
+ if(root_lease<0)return -1;
+ if(xTaskCreate(service_events,"stm-events",2048,NULL,3,NULL)!=pdPASS)return -1;
+#if defined(CONFIG_ROM_SERVICE_DEVICE_F103C8)
+ device=&rom_device_f103c8;
+#else
+ device=&rom_device_f407zg;
+#endif
+ staging=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,0x40,"staging");
+ if(!staging) return -1;
  if(!configuration_valid()) return -1;
  uart_owner=xSemaphoreCreateMutex(); if(!uart_owner) return -1;
     ESP_ERROR_CHECK(esp_io_target_gpio_init());
@@ -665,11 +706,23 @@ int module_business_start(const module_host *h) {
 
  return 0;
 }
-int module_business_dispatch(uint32_t channel,void *argument) {
- if(channel==1) { bool owned=false; serve(*(int *)argument,&owned); if(owned)control_release(); return 0; }
- if(channel==2) { int fd=*(int *)argument; unsigned baud; bool history,framed=false;
-  if(stream_auth_ex(fd,true,&baud,&history,&framed)) {if(framed)uart_framed_session(fd,baud);else uart_session(fd,baud);} return 0; }
- if(channel==3) return control_acquire()?0:-1;
- if(channel==4) {control_release();return 0;}
- return -1;
+void module_business_control(rmb_connection fd,void *context) {
+ (void)context;
+ control_lease=host->watchdog_open("stm-control",10000);
+ if(control_lease<0)return;
+ service_progress();
+ bool owned=false;serve(fd,&owned);if(owned)control_release();
+ (void)host->watchdog_close(control_lease);control_lease=-1;
+}
+void module_business_uart(rmb_connection fd,void *context) {
+ (void)context;
+ uart_lease=host->watchdog_open("stm-uart",5000);
+ if(uart_lease<0)return;
+ atomic_store_explicit(&uart_callback_task,xTaskGetCurrentTaskHandle(),memory_order_relaxed);service_io_progress();
+ unsigned baud;bool history,framed=false;
+ if(stream_auth_ex(fd,true,&baud,&history,&framed)) {
+  if(framed)uart_framed_session(fd,baud);else uart_session(fd,baud);
+ }
+ (void)host->watchdog_close(uart_lease);uart_lease=-1;
+ atomic_store_explicit(&uart_callback_task,NULL,memory_order_relaxed);
 }

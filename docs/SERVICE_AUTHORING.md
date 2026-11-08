@@ -1,115 +1,111 @@
-# 新业务模块编写：hello A/B（ABI 3）
+# 新业务模块编写 / Service authoring — ABI 4
 
-## 已完成实机 A→B 更新；与 SPI 历史故障分开判断
+## 范围与证据
 
-`examples/services/hello/service.c` 为同一份源码；A.json/B.json 仅将整数宏
-`SERVICE_VARIANT` 设为 1/2。A 原样回显；B **只将 ASCII a–z 大写**，UTF-8
-其余字节不变，不按字节反转 Unicode。无 Wi-Fi 初始化、监听 socket、lwIP
-初始化、RTOS 任务、UART/SPI 驱动或 ROM 实现。仍使用基座已存在 TCP 3333。
-本例本机单测的 socket/auth/timer 替身仅用于 UNIT，不冒充真实目标结果。
+本页描述 ABI4 契约；构建/原生验证不等于硬件验收。ABI3 的历史实机结果单列于文末，不作为 ABI4 已部署或硬件通过的证据。ABI4 故意拒绝 ABI3 二进制，必须针对准确的新基座 ELF 重建。
 
-请求为一行 JSON（结尾 LF，不超过 1024 个行内容字节，整行共用 10 秒期限）：
+## 公共 SDK：`include/rmb/service.h`
+
+公共头仅依赖 `stdint.h`、`stddef.h`、`stdbool.h`，不包含 ROM、ESP-IDF 或 socket 头。以下字段顺序和签名是 ABI，不可自行调整：
+
+```c
+#define RMB_SERVICE_ABI 4u
+#define MODULE_ABI_VERSION RMB_SERVICE_ABI
+#define RMB_NET_AUTH_CONSUME 0u
+#define RMB_NET_AUTH_REPLAY 1u
+#define RMB_IO_ERROR (-1)
+#define RMB_IO_AGAIN (-2)
+
+typedef int32_t rmb_connection;
+typedef void (*rmb_connection_fn)(rmb_connection, void *);
+typedef int (*rmb_job_fn)(void *);
+
+typedef struct {
+    uint32_t abi, size;
+    int (*listen)(uint16_t port, uint32_t flags,
+                  rmb_connection_fn handler, void *context);
+    bool (*exact)(rmb_connection, void *buffer, size_t size,
+                  bool writing, int64_t deadline_us);
+    int (*read)(rmb_connection, void *buffer, size_t size, bool nonblocking);
+    int (*write)(rmb_connection, const void *buffer, size_t size, bool nonblocking);
+    bool (*authenticated)(const char *candidate);
+} rmb_net_api;
+
+typedef struct {
+    uint32_t abi, size;
+    const rmb_net_api *net;
+    int64_t (*now_us)(void);
+    void (*progress)(void);
+    int (*run)(rmb_job_fn function, void *context, int64_t timeout_us);
+    int (*watchdog_open)(const char *role, uint32_t timeout_ms);
+    int (*watchdog_feed)(int lease, uint32_t checkpoint);
+    int (*watchdog_close)(int lease);
+} rmb_host;
+
+typedef int (*module_entry_fn)(const rmb_host *);
+```
+
+新服务使用 `rmb_host`，不恢复旧 ops 表。没有 `module_ops`、dispatch 编号、必填 ROM 桩、device/staging 指针。镜像头及 32 字节 ELF-binding 布局保留，仍强绑定准确 ELF 哈希和地址；这不是跨 CPU/SDK/基座的二进制可移植性承诺。
+
+## 初始化与监听
+
+`int module_entry(const rmb_host *host)` 校验 host/net 的 ABI 与 size，初始化本服务正常驱动/任务，注册监听，成功返回 0。hello 是普通服务：仅注册 TCP **3333**，不初始化 Wi-Fi、不导入 raw socket、不注册 3336、不实现 ROM 不支持桩。A 原样 echo，B 只将 ASCII a–z 大写，UTF-8 其他字节不变。业务 schema、JSON 转义、计数和内存所有权仍由 hello 负责。
+
+`listen` 成功返回 0，失败返回负数。服务自行选择 3333/3336；3337 是基座管理端口，3335 是基座日志端口，禁止服务占用。最多 4 个监听，有界基座连接槽；每监听一个 worker，同一监听回调串行，不同监听可并发。业务回调绝不在管理任务上执行，不要假设跨监听共享状态天然串行。
+
+仅 INIT 阶段可注册；非法端口、flags、重复端口或不在已准入模块镜像内的回调指针必须拒绝。入口完整成功后才打开 admission/ready gate；部分初始化不得留下可调用业务回调。失败初始化进入恢复/整机复位，不热重入。
+
+## 认证与 AUTH_REPLAY
+
+所有连接在回调前由基座校验首个 LF 结束的 JSON 对象，要求恰有一个字符串 `token` 字段；其他字段允许属于业务协议，基座不解释 `op` 或 STM 操作。基座限制首行长度、token 长度及认证时间，拒绝重复 token、原始/解码 NUL、畸形 JSON 和错误令牌。
+
+- `RMB_NET_AUTH_CONSUME`：丢弃认证行，业务从后续字节开始读。
+- `RMB_NET_AUTH_REPLAY`：将认证首行的**原始完整字节**作为业务最先读到的数据，不重排或重新编码 JSON，兼容 token/op 同行的旧单请求协议。
+- 基座不额外注入 ACK，避免破坏现有协议。
+- `net->authenticated(candidate)` 仅供旧服务做纵深校验，不向服务提供秘密；普通服务无需重复认证。hello/STM 的旧单请求协议选择 REPLAY。
+
+示例请求仍是一行 JSON：
 
 ```json
-{"token":"<从安全存储取得，不写入代码>","op":"service-info"}
-{"token":"<从安全存储取得，不写入代码>","op":"echo","text":"hello 世界"}
+{"token":"<securely supplied>","op":"service-info"}
+{"token":"<securely supplied>","op":"echo","text":"hello 世界"}
 ```
 
-只接受字符串字段 token/op/text；重复字段、未知字段、非对象、错误类型、
-原始或转义 NUL、JSON 尾随内容均拒绝。echo 必须有 text，最多 128 UTF-8
-**字节**；service-info 不允许 text。认证失败不回显业务文本。返回 JSON
-使用基座 cJSON_PrintUnformatted 对文本转义。requests 统计通过认证且 schema
-有效的成功操作（含当前 info）；echoes 只统计 echo，均饱和递增。输出含版本、
-uptime_ms、ROM 不支持和状态重置说明。每次 module_entry 重置内存计数。
+## 借用连接与 I/O
 
-ABI3 的 ROM validate/download/probe/restart 槽位仍然必填，本例显式返回
-ROM_E_CAP。dispatch 1 同步借用 `int *fd`，不保存指针、不关闭 socket；3/4
-为控制获取/释放，其他通道返回不支持。module_entry 返回静态 const ops；
-链接脚本将其置于保留 DRAM；`.module_base_id` 是 data 开头的 32 字节 SHA。
+`rmb_connection` 是 **int32_t opaque borrowed handle，不是 OS fd**。仅当前回调内有效，不能保存供以后使用、传给 socket API 或自行 close；回调返回后由基座关闭。基座使用 generation-bound slot ID，每次读写检查 generation 和 active 状态，过期 handle 不得访问后来复用的连接槽。
 
-## 构建与本机测试
+read/write 允许短传输：正数是实际字节数；read 的 0 是 EOF；负数为错误，`RMB_IO_AGAIN` 表示暂时不可用。nonblocking 路径必须正确处理 EAGAIN/EINTR。`nonblocking=false` 也仅允许适配器规定的有限等待，不承诺无限等到填满 buffer；需要完整传输和明确期限时使用 `exact`。`exact` 处理短读写，`writing` 指定方向，使用 `now_us()` 同一单调时钟上的**绝对**微秒期限，完成返回 true，否则 false；不能在每次短传输后重置期限。不得依赖 write(0) 表示 read EOF。
 
-```sh
-export IDF_PATH=/path/to/esp-idf-v5.5.5
-# 将真实 riscv32-esp-elf 工具链加入 PATH（或传 --tool-prefix）
-python esp32_rom/module/build_module.py \
-  --module-manifest examples/services/hello/A.json \
-  --base-elf /path/to/exact/current/base.elf \
-  --text-address 0x420c0028 --data-address 0x3fc962c0 \
-  --output /private/output/A/service.bin
-# B 改用 B.json 和独立 B 输出目录；绝不在 A/B 间改 service.c。
-sh examples/services/hello/test.sh
-ctest --test-dir out/native --output-on-failure
-```
+## 服务存活
 
-地址仅为本次生产目标报告值，不可作为其他基座默认值。每个输出目录使用独立
-module-link。manifest 严格只允许 name/sources/drivers/defines；sources 必须是
-清单目录内真实 C 文件（拒绝绝对路径、越界/符号链接逃逸）；drivers 显式数组，
-白名单 **小写 uart、spi**，不得重复；defines 为安全宏名到整数的映射，拒绝
-字符串注入、保留编译器宏等。无 manifest 保留完整旧业务的默认源码及双驱动。
-空 drivers 不编译/链接 UART/SPI，不要求 SPI 所有权符号，不提取原子辅助。
-ELF 精确导入、runtime 组件排除、GP/孤儿段/边界/SHA 检查均保留。
-GNU ld 的 resident weak 符号仍可保留 W/V 类型：以精确地址而非一概要求 A
-判断是否被复制；本次零 archive 成员提取进一步排除了运行时副本。
+入口中注册根看门狗角色，服务实际的事件/空闲循环喂该角色；活动中的关键控制/UART 回调分别注册和维护自己的角色，避免健康的空闲任务掩盖卡死的业务。临时角色在回调返回时关闭，根角色持续到重启；已超时角色不能靠迟到的 feed/close 续命。hello 的 `platform_idf.c` 是普通 FreeRTOS 空闲心跳任务，不喂业务回调角色。
 
-## 实测构建量（不虚构工时）
+看门狗由底座配置和判定，服务通过公开 SDK 显式喂狗；接口仅供任务上下文使用。普通驱动/中断依然按 SDK 方式使用，不新增 cache-off ISR 执行框架。详见 [看门狗与诊断](WATCHDOG_RECOVERY.md)。
 
-本次源码物理行数通过程序计数：service.c 87 行、test_service.c 60 行；
-manifest 测试 217 行；builder 269→371 行，净增 102 行。它是小服务，但为使
-其可编写，先必须修复 builder 的硬编码来源/双驱动假设。
+## 长任务监督
 
-| 版本 | 镜像字节 | text | data | bss |
-|---|---:|---:|---:|---:|
-| A | 1740 | 1220 | 480 | 20 |
-| B | 1760 | 1240 | 480 | 20 |
+`host->run(function, context, timeout_us)` 在受监督 worker 中执行准入镜像内的函数，限时不超过 1800 秒。context 是借用数据，调用方必须保持有效直到工作结束或整机复位；禁止超时返回后仍有后台任务持有调用栈指针。长操作调用 `progress()`；watchdog 独立于管理网络任务。嵌套 run 必须安全内联或明确拒绝，不能等待自身 worker 导致死锁。
 
-A/B 的 proof.json 均记录仅一份 service.c、drivers=[]、提取 archive 成员为空、
-无未解析引用、无 resident 重定义。模块自有全局仅 module_entry 和
-module_base_binding；静态 ops/计数属于模块 DRAM。实际 SDK 基座 nm 已检查存在
-所有所需全局符号；未仅凭头文件猜测。私有输出目录
-`$PRIVATE_OUTPUT_ROOT/service-authoring/{A,B}/service.bin`，完整导入表、SHA、
-敏感字节审计和行数在同目录上层 audit.json；每版各有 module-link/proof.json。
-基座 SHA 构建前后均为
-`48a8d97b734f585156f811cb54e66bc9b78f18b7d395bb50f3a28df907d787c0`。
+基座只认识 `SJ_INIT/SJ_CALL/SJ_HANG`，不认识 probe/download 等 STM 操作；STM 旧状态响应由 STM 服务自行组装，不把 host 状态直接当作 STM wire response。
 
-验证：现有 CTest 20/20、新 manifest 测试 11/11、实际 service.c 的 A/B 两次
-ASan+UBSan 原生测试通过；默认完整业务也对同一生产 ELF 成功重建。
-本机测试覆盖认证拒绝、重复/未知/NUL/超长/schema/转义、计数重置和借用期。
-已实测 Wi-Fi 更新 A→B，原样回显/ASCII 大写行为分别正确，状态重新从 requests=1、echoes=0 开始；错误口令、129 字节文本和不支持操作被拒绝，拒绝请求未增加计数。错误底座绑定的镜像也被拒绝。更新提交后、重启前服务不可用（可能 TCP reset，不保证总能收到 JSON 错误），重启后才激活。底座 ELF/bin/bootloader/分区表的构建产物 SHA 前后相同，全程未串口刷底座。
+## 构建与验证边界
 
-随后已恢复原 UART/SPI 模块。首次 SPI 恢复复测出现全 FF，不能误写成当时已正常；用户换线后，另一次 A→B→同一 SPI 模块恢复在三档速率各 100 次通过。该情况正在按独立 SPI 故障调查处理，不能归因于服务更新或断言只是线。详见 [SPI 调查](SPI_INVESTIGATION.md)。
+保留 MEMPROT+LOCK、固定分区/footer 和不可变的启动期更新许可。运行中失效 footer 后整机重启；只有无服务执行的更新启动才能擦写镜像体；校验提交后再次重启，入口每启动仅执行一次，不热卸载。footer 失效本身是 Flash 操作，NVS 也可能造成普通 IRQ 延迟；本次不增加特殊 cache-off ISR 子系统。
 
-编写难度按维度评估：套用现有 manifest/模板写纯 JSON 服务为低到中；裸写协议、鉴权边界和生命周期仍有成本。新硬件驱动服务需要 ESP-IDF/驱动状态/中断与内存预算知识，不能由本例证明其同样容易。Wi-Fi 初始化与外设驱动可不写，但协议层、SDK 构建和二进制绑定仍强耦合。
+manifest 的 sources/drivers/整数 defines 选择服务代码；hello 不需要 UART/SPI 驱动。使用 `esp32_rom/module/build_module.py` 和准确的 ABI4 base ELF、真实预留 text/data 地址构建；不要复制历史地址。保留精确导入、唯一运行时、GP/孤儿段/边界及 SHA 检查。synthetic 地址的链接结果只是 compile proof，**不可部署**。
 
-## 耦合评估：可换业务，不等于稳定 SDK
+原生测试应覆盖认证、REPLAY 原字节、短 I/O、绝对期限、过期 handle、初始化 gate、监听并发和监督超时。交叉构建证明编译/链接；native mock 证明对应路径；两者均不能证明 Wi-Fi 更新、实际 Flash/WDT 或目标 UART/SPI 行为。当前 ABI4 验证结果以本轮实际构建/测试记录为准，本页不预报通过数量。
 
-**高耦合点仍存在：**
+## 历史 ABI3 实机记录（不是 ABI4 验收）
 
-- module_abi.h 内嵌 ROM 类型与强制 ROM 回调，非 ROM 服务也需写不支持桩。
-- `authenticated/socket_exact/reply/failure/esp_timer_get_time/cJSON_*` 均通过
-  **ELF 全局符号名**导入，不是正式 host 函数表。auth 与原始网络 fd/JSON
-  解析绑在一起，不是消息帧抽象。cJSON 节点布局也属于二进制耦合。
-- 必须使用完全相同的 base ELF、SDK 编译配置、真实地址及哈希；复用
-  compile_commands 带入庞大 SDK include 路径，包括旧私有工程路径。
-  这不是模块源码独立于 SDK/基座的通用可移植接口。
-- fd/host/JSON 的所有权与生命周期是隐式约定：本例同步完成、不保存借用 fd，
-  复制业务文本后释放 parse tree；依赖基座控制任务串行调用，不宣称线程安全。
-- 管理固件仍保留 STM32 名称、target/staging 等与 hello 无关的概念；概念上尚未
-  完全泛化，本次不改基座、不增加 host API。
+以下是迁移前已经记录的结果，未在 ABI4 重跑：
 
-**现有非必要配置耦合与打包风险：** 主代理已确认旧 business.c 的
-configuration_valid 对 CONFIG_ROM_SERVICE_TOKEN/WIFI_SSID/WIFI_PASSWORD
-做 strlen 校验，使当前 SPI 业务镜像嵌入真实 token/password；这是不必要的
-业务配置耦合。本例不复制该 guard、不修改不归本任务所有的 business.c。
-对生产 sdkconfig.h 的真实 token/password 仅在内存中取得并搜索 A/B 字节，
-只记录字段名和 present=false，绝不打印值；A/B 均未包含它们。
-生产基座/完整业务镜像仍必须私有；示例目录不放编译产物，不能由 hello 的
-“未包含口令”推导所有旧模块都可以公开。
+- ABI3 hello 使用必填 ROM_E_CAP 桩、dispatch 1 借用 `int *fd` 和静态 ops；这些是旧接口，不是新服务模板。
+- 当时 A/B 镜像分别 1740/1760 字节；text 1220/1240，data 均 480，bss 均 20。原 service.c 87 行、test_service.c 60 行，manifest 测试 217 行；builder 269→371 行。这些数值不是 ABI4 当前大小/行数。
+- 当时 CTest 20/20、manifest 11/11、A/B ASan+UBSan 原生测试通过；同一生产 ELF 重建完整旧业务成功。历史基座 SHA 为 `48a8d97b734f585156f811cb54e66bc9b78f18b7d395bb50f3a28df907d787c0`，不能用于 ABI4 重建。
+- 当时实机 Wi-Fi A→B 的 echo/ASCII 大写、计数重置、错误口令/129 字节文本/不支持操作拒绝、错误底座绑定拒绝均已记录；提交后到重启前服务不可用，重启才激活。底座 ELF/bin/bootloader/分区表 SHA 未变，未串口刷底座。
+- 随后恢复原 UART/SPI 模块；第一次 SPI 复测全 FF，并非成功。用户换线后的另一次 A→B→同一 SPI 恢复在三档速率各 100 次通过。间歇故障独立调查，不能断言只是线或归因于更新。见 [SPI 调查](SPI_INVESTIGATION.md)。
+- 旧生产基座/完整业务可能含凭据，必须私有；历史 hello 未检出 token/password 不代表其他模块或 ABI4 产物可公开。不要读取/输出生产配置来补写文档。
 
-## English summary
-
-One C source builds A (identity echo) and B (ASCII-only uppercase) using validated
-integer manifest defines. No base change, new host API, drivers or networking
-initialization. Exact-ELF global imports and borrowed socket/JSON contracts remain
-high coupling, not a decoupled message-frame SDK. Native stubs are UNIT ONLY;
-This service was cross-linked and physically updated A→B over Wi-Fi, with behavior/state/authentication tests passing and resident build hashes unchanged. The original UART/SPI module was restored. Its intermittent all-FF SPI observation is investigated separately and must not be attributed conclusively to wiring or service code; see SPI_INVESTIGATION.md.
+ABI4 的独立硬件验收仍未由这些历史结果证明。

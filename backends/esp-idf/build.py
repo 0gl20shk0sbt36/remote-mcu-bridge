@@ -35,6 +35,14 @@ if a.user_config:
     if not a.user_config.is_file(): p.error('user configuration does not exist')
     defaults.append(str(a.user_config.resolve()))
 a.build_dir.mkdir(parents=True,exist_ok=True)
+# ABI4 resident networking is independent from the selected STM service wiring.
+# Public compile-only placeholders: never read production credentials here.
+resident_defaults=a.build_dir/'rmb-resident.defaults'
+resident_network=('CONFIG_RMB_ENABLE=y\nCONFIG_RMB_WIFI_SSID="COMPILE_ONLY_NO_NETWORK"\nCONFIG_RMB_WIFI_PASSWORD=""\nCONFIG_RMB_TOKEN="COMPILE_ONLY_NOT_A_SECRET"\n' if a.profile=='compile-enabled' else '# CONFIG_RMB_ENABLE is not set\n')
+watchdog_defaults='CONFIG_ESP_INT_WDT=y\nCONFIG_ESP_TASK_WDT_EN=y\nCONFIG_ESP_TASK_WDT_PANIC=y\nCONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y\n'
+resident_defaults.write_text(resident_network+watchdog_defaults)
+# Explicit user configuration remains the final authority.
+defaults.insert(len(defaults)-(1 if a.user_config else 0),str(resident_defaults))
 config=a.build_dir/'sdkconfig'
 contract={'backend':backend['id'],'board':board['id'],'profile':a.profile,'defaults':defaults}
 state=a.build_dir/'rmb-build.json'
@@ -48,12 +56,14 @@ if rc == 0:
     for line in config.read_text().splitlines():
         if line.startswith('CONFIG_') and '=' in line:
             key,value=line.split('=',1); values[key]=value
-    enabled=values.get('CONFIG_ROM_SERVICE_ENABLE')=='y'
+    enabled=values.get('CONFIG_RMB_ENABLE')=='y'
     if enabled != (a.profile=='compile-enabled'):
         p.error('generated sdkconfig service enable does not match selected profile')
-    if enabled:
-        for key,pin in [('TX','tx'),('RX','rx'),('BOOT0','boot0'),('NRST','nrst'),('BOOT1','boot1')]:
-            if values.get('CONFIG_ROM_SERVICE_'+key)!=str(board['pins'][pin]):
-                p.error('generated sdkconfig wiring differs from fixed board: '+key)
-    print('Generated sdkconfig profile and fixed-board wiring validated.',flush=True)
+    if enabled and (values.get('CONFIG_ESP_INT_WDT')!='y' or
+                    values.get('CONFIG_ESP_TASK_WDT_EN')!='y' or
+                    values.get('CONFIG_ESP_TASK_WDT_PANIC')!='y' or
+                    not any(values.get(k)=='y' for k in
+                            ('CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT','CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT'))):
+        p.error('enabled resident requires IWDT, TWDT panic, and panic reboot; regenerate stale sdkconfig or correct user configuration')
+    print('Generated sdkconfig resident profile and watchdog recovery validated; service wiring is module-owned.',flush=True)
 sys.exit(rc)

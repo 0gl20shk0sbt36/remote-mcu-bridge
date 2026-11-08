@@ -33,7 +33,6 @@ static bool socket_exact(int fd, void *p, unsigned n, bool wr, int64_t deadline)
 }
 static bool authenticated(const char *s) {return !strcmp(s,"test-token");}
 static void failure(int fd,const char *s) {(void)fd;(void)s;rejected++;}
-static bool module_runtime_ready(void) {return true;}
 static void spi_pad_sample(int fd,unsigned mode) {(void)fd;called++;selected=mode;}
 '''
 tests = r'''

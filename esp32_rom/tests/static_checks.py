@@ -7,7 +7,10 @@ ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT / "main/service.c").read_text()
 business = (ROOT / "module/business.c").read_text()
 backend = (ROOT / "module/platform/esp_idf_io.c").read_text()
-config = (ROOT / "main/Kconfig.projbuild").read_text()
+config_files = list((ROOT / "module").rglob("Kconfig*"))
+assert config_files, 'STM service must own its own configuration'
+config = '\n'.join(p.read_text() for p in config_files)
+base_config = (ROOT / "main/Kconfig.projbuild").read_text()
 header = (ROOT.parent / "rom/rom.h").read_text()
 rows = []
 for row in csv.reader((ROOT / "partitions.csv").read_text().splitlines()):
@@ -36,17 +39,17 @@ assert "static int target_reset(void *ctx)" in business
 assert "int (*reset)(void *);" in header
 assert "return (int)total;" in business and "return done==ESP_OK?n:-1;" in business
 assert "device->image_max" in business and "device->flash_size" in business
-assert "rom_device_f103c8" in source and "rom_device_f407zg" in source
+assert "rom_device_f103c8" in business and "rom_device_f407zg" in business
+assert "rom_device_" not in source
 assert "config ROM_SERVICE_DEVICE_F103C8" in config and "config ROM_SERVICE_DEVICE_F407ZG" in config
 assert "#define REQUEST_MAX 1024" in source
-assert 'config ROM_SERVICE_ENABLE\n    bool' in config
-assert re.search(r"config ROM_SERVICE_ENABLE\n.*\n    default n", config)
+assert re.search(r"config (?:RMB|ROM_SERVICE)_ENABLE\n.*\n\s+default n", base_config)
 for name in ("TX", "RX", "BOOT0", "BOOT1", "NRST"):
     assert re.search(rf"config ROM_SERVICE_{name}\n.*\n    range -1 21\n    default -1", config)
-assert re.search(r'config ROM_SERVICE_TOKEN\n.*\n    default ""', config)
+assert re.search(r'config (?:RMB|ROM_SERVICE)_TOKEN\n.*\n\s+default ""', base_config)
 assert '"module_runtime.c"' in (ROOT / "main/CMakeLists.txt").read_text()
 assert '"../../rom/rom.c"' not in (ROOT / "main/CMakeLists.txt").read_text(), 'business ROM implementation belongs in independent XIP module, not resident base'
-assert '"../../rom/devices.c"' in (ROOT / "main/CMakeLists.txt").read_text()
+assert 'rom/devices.c' not in (ROOT / "main/CMakeLists.txt").read_text()
 assert 'CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y' in (ROOT / "sdkconfig.defaults").read_text()
 print("PASS: partition geometry, protocol/config safety invariants and current ROM callback contract")
 assert business.index("authenticated(token->valuestring)") < business.index('if (!strcmp(op->valuestring, "probe"))')
@@ -78,10 +81,11 @@ for call in ('uart_driver_install(', 'uart_param_config(', 'uart_set_pin(',
     assert call not in source, f'resident base owns target hardware: {call}'
 assert '#include "driver/uart.h"' in business
 assert '#include "driver/gpio.h"' in business
-assert 'module_runtime_dispatch(1,&fd)' in source
-assert 'module_runtime_dispatch(2,&fd)' in (ROOT / 'main/streams.inc').read_text()
-assert 'int module_business_dispatch(uint32_t channel,void *argument)' in business
-assert 'if(channel==1)' in business and 'if(channel==2)' in business
+assert 'module_runtime_dispatch' not in source
+assert 'module_ops' not in business
+entry = (ROOT / 'module/entry.c').read_text()
+assert 'RMB_NET_AUTH_REPLAY' in entry
+assert '3333' in entry and '3336' in entry
 # Import resident addresses without copying their state; bind to the final ELF.
 builder = (ROOT / 'module/build_module.py').read_text()
 assert "'-Wl,--just-symbols=' + str(base_elf)" in builder
@@ -91,7 +95,8 @@ assert 'if hashlib.sha256(base_elf.read_bytes()).hexdigest() != base_hash:' in b
 assert builder.index('if hashlib.sha256(base_elf.read_bytes()).hexdigest() != base_hash:') < builder.index('out.write_bytes(image)')
 runtime = (ROOT / 'main/module_runtime.c').read_text()
 assert 'memcmp(binding,esp_app_get_description()->app_elf_sha256,sizeof binding)' in runtime
-assert 'if(!module_runtime_update_allowed()||ops||busy)return ESP_ERR_INVALID_STATE;' in runtime
+assert 'module_runtime_update_allowed()' in runtime
+assert 'module_ops' not in runtime
 print('PASS: business UART/GPIO ownership, resident generic dispatch, just-symbols imports and final-base ELF hash binding')
 print('PASS: authenticated explicit-only probe, read-only command whitelist, full bounded stale snapshots and UART telemetry')
 print("NOT CHECKED: ESP-IDF compilation, driver semantics, Wi-Fi/TCP/UDP runtime, physical wiring or STM32 programming")
