@@ -564,7 +564,7 @@ void rmb_network_init_abort(void) {
         }
         s->active = false;
         if (s->lock) {
-            vSemaphoreDelete(s->lock);
+            rmb_port_mutex_delete(s->lock);
             s->lock = NULL;
         }
     }

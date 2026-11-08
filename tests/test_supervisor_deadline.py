@@ -26,6 +26,7 @@ monitor = supervisor[
 preamble = r"""
 #define _POSIX_C_SOURCE 200809L
 #include <stdint.h>
+#include "rmb/port.h"
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -34,12 +35,15 @@ preamble = r"""
 #include <assert.h>
 #include <setjmp.h>
 #include "rmb/service.h"
-#include "rmb/port.h"
-#include "port_native.h"
 #include "rmb/supervisor.h"
 #define RTC_NOINIT_ATTR
 #define portMUX_INITIALIZER_UNLOCKED 0
 typedef int portMUX_TYPE;
+typedef int TaskHandle_t;
+typedef int QueueHandle_t;
+typedef int SemaphoreHandle_t;
+#define pdTRUE 1
+#define pdMS_TO_TICKS(x) (x)
 #define ESP_ERROR_CHECK(x) assert((x)==0)
 #define ESP_RST_TASK_WDT 6
 #define ESP_RST_INT_WDT 5
@@ -54,10 +58,19 @@ static void leave(portMUX_TYPE *p) {(void)p;assert(lock_depth==1);--lock_depth;}
 #define portENTER_CRITICAL(p) enter(p)
 #define portEXIT_CRITICAL(p) leave(p)
 static int xPortInIsrContext(void) {return 0;}
+static int xTaskGetCurrentTaskHandle(void) {return 1;}
+static int64_t esp_timer_get_time(void) {return clock_us;}
+static int esp_reset_reason(void) {return reset_reason;}
+static void esp_restart(void) {assert(!lock_depth);resets++;longjmp(reset_trap,1);}
+static int esp_task_wdt_add(void *p) {(void)p;return 0;}
+static int esp_task_wdt_reset(void) {return 0;}
+static void xSemaphoreGive(int s) {assert(s==1);notifications++;}
+static void vTaskDelay(unsigned n) {(void)n;longjmp(finished_trap,1);}
 static void reply(int fd,const char *s) {(void)fd;strcpy(response,s);}
 """
 platform = r"""
 static supervisor_job *pending;
+static int xQueueReceive(int queue,supervisor_job **out,int ticks) {
  (void)queue;(void)ticks;
  if(!pending)longjmp(finished_trap,1);
  *out=pending;pending=NULL;return pdTRUE;
@@ -67,6 +80,7 @@ static int module_runtime_init(void) {
  assert(service_watchdog_open("entry-root",60000)>0);
  clock_us+=init_delay;return init_result;
 }
+#include "port_compat.h"
 """
 post = r"""
 static void fresh(void) {
@@ -117,6 +131,9 @@ with tempfile.TemporaryDirectory(
     subprocess.run(
         [
             "cc",
+            "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
+            "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
+            '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
             "-std=c11",
             "-O1",
             "-g",
@@ -130,12 +147,8 @@ with tempfile.TemporaryDirectory(
             "-no-pie",
             "-fno-sanitize-recover=all",
             "-I" + str(ROOT / "include"),
-            "-I" + str(ROOT / "tests"),
-                "-I" + str(ROOT / "esp32_rom" / "tests"),
-            '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
             str(path / "deadline.c"),
             str(ROOT / "core/supervisor.c"),
-            str(ROOT / "esp32_rom" / "tests" / "port_native_impl.c"),
             "-o",
             str(path / "deadline"),
         ],

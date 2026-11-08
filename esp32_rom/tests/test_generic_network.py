@@ -12,9 +12,8 @@ source = "\n".join(line for line in source.splitlines() if not line.startswith("
 pre = r"""
 #define _POSIX_C_SOURCE 200809L
 #include "rmb/service.h"
-#include "rmb/port.h"
-#include "port_native.h"
 #include <assert.h>
+#include "rmb/port.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -32,10 +31,31 @@ pre = r"""
 #ifndef CONFIG_RMB_LISTENER_STACK_BYTES
 #define CONFIG_RMB_LISTENER_STACK_BYTES 12288
 #endif
+#define ESP_LOGI(...) ((void)0)
+typedef unsigned TickType_t;
+typedef void *TaskHandle_t;
+typedef int *SemaphoreHandle_t;
+#define pdTRUE 1
+#define pdPASS 1
+#define portMAX_DELAY UINT_MAX
+#define portTICK_PERIOD_MS 1
+#define pdMS_TO_TICKS(x) (x)
+static int mutex;
+static int xSemaphoreTake(int *p,unsigned t) {(void)t;if(*p)return 0;*p=1;return 1;}
+static void xSemaphoreGive(int *p) {assert(*p);*p=0;}
+static int *xSemaphoreCreateMutex(void) {return &mutex;}
+static void vSemaphoreDelete(int *p) {(void)p;}
 static bool code_allowed=true;
 static void *current_task=(void *)1;
 static unsigned task_creates, task_notifies, task_deletes;
 static int task_fail_after=-1;
+static void *xTaskGetCurrentTaskHandle(void) {return current_task;}
+static void ulTaskNotifyTake(int a,unsigned b) {(void)a;(void)b;}
+static void vTaskDelay(unsigned n) {(void)n;}
+static void vTaskDelete(void *p) {(void)p;++task_deletes;}
+static void xTaskNotifyGive(void *p) {(void)p;++task_notifies;}
+static int xTaskCreate(void (*f)(void *),const char *name,unsigned stack,void *arg,unsigned priority,void **out) {(void)f;(void)name;assert(stack==CONFIG_RMB_LISTENER_STACK_BYTES);(void)arg;(void)priority;if(task_fail_after==0)return 0;if(task_fail_after>0)--task_fail_after;*out=(void *)2;++task_creates;return 1;}
+static int64_t esp_timer_get_time(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (int64_t)t.tv_sec*1000000+t.tv_nsec/1000;}
 bool module_runtime_code_pointer(const void *p) {return p!=NULL && code_allowed;}
 bool module_runtime_ready(void) {return true;}
 bool authenticated(const char *s) {return s && !strcmp(s,"native-public-token");}
@@ -101,29 +121,27 @@ int main(void) {
  CHECK("{\"token\":\"native-public-token\",\"n\":\"\\ud800\"}\n",false);
  char big[2100];memset(big,' ',sizeof big);check(big,sizeof big,false);
  int f[2];assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));assert(nonblock(f[1]));
- static rmb_mutex_t test_lock;
- if(!test_lock) assert(!rmb_port_mutex_create(&test_lock));
- slots[0]=(connection_slot){.fd=f[1],.generation=7,.active=true,.lock=test_lock};
+ slots[0]=(connection_slot){.fd=f[1],.generation=7,.active=true,.lock=&mutex};
  rmb_connection h=7*LISTENERS+1;char b[256];
  assert(net_read(h,b,sizeof b,true)==RMB_IO_AGAIN);
  assert(net_write(h,"abc",3,false)==3);assert(read(f[0],b,3)==3&&!memcmp(b,"abc",3));
  assert(write(f[0],"q",1)==1);assert(net_read(h,b,sizeof b,false)==1&&b[0]=='q');
  assert(net_write(h,"",0,true)==0);
- assert(write(f[0],"xy",2)==2);assert(net_exact(h,b,2,false,rmb_port_now_us()+100000));assert(!memcmp(b,"xy",2));
- assert(!net_exact(h,b,1,false,rmb_port_now_us()-1));
+ assert(write(f[0],"xy",2)==2);assert(net_exact(h,b,2,false,esp_timer_get_time()+100000));assert(!memcmp(b,"xy",2));
+ assert(!net_exact(h,b,1,false,esp_timer_get_time()-1));
  /* A partially completed exact read cannot reset its absolute deadline. */
- assert(write(f[0],"r",1)==1);int64_t partial=rmb_port_now_us();
- assert(!net_exact(h,b,2,false,partial+20000));assert(b[0]=='r'&&rmb_port_now_us()-partial<200000);
- int64_t began=rmb_port_now_us();assert(!net_exact(h,b,1,false,began+20000));assert(rmb_port_now_us()-began<200000);
+ assert(write(f[0],"r",1)==1);int64_t partial=esp_timer_get_time();
+ assert(!net_exact(h,b,2,false,partial+20000));assert(b[0]=='r'&&esp_timer_get_time()-partial<200000);
+ int64_t began=esp_timer_get_time();assert(!net_exact(h,b,1,false,began+20000));assert(esp_timer_get_time()-began<200000);
  slots[0].active=false;assert(net_read(h,b,1,false)==RMB_IO_ERROR);
  slots[0].active=true;slots[0].generation=8;assert(net_write(h,"bad",3,false)==RMB_IO_ERROR);
- assert(!net_exact(h,b,1,false,rmb_port_now_us()+10000));
+ assert(!net_exact(h,b,1,false,esp_timer_get_time()+10000));
  h=8*LISTENERS+1;assert(net_read(h,b,0,false)==0);
  assert(net_read(h,NULL,1,false)==RMB_IO_ERROR);assert(net_read(0,b,1,false)==RMB_IO_ERROR);
  const char header[]="{\"token\":\"native-public-token\"}\n";
  assert(write(f[0],header,sizeof header-1)==sizeof header-1);
  slots[0].flags=RMB_NET_AUTH_REPLAY;assert(auth_header(&slots[0]));
- assert(net_exact(h,b,sizeof header-1,false,rmb_port_now_us()+100000));assert(!memcmp(b,header,sizeof header-1));
+ assert(net_exact(h,b,sizeof header-1,false,esp_timer_get_time()+100000));assert(!memcmp(b,header,sizeof header-1));
  assert(net_read(h,b,1,true)==RMB_IO_AGAIN); /* no authentication ACK */
  assert(write(f[0],header,sizeof header-1)==sizeof header-1);assert(write(f[0],"z",1)==1);
  slots[0].flags=RMB_NET_AUTH_CONSUME;assert(auth_header(&slots[0]));assert(net_read(h,b,1,false)==1&&b[0]=='z');
@@ -149,6 +167,7 @@ int main(void) {
  rmb_network_init_begin();assert(atomic_load(&phase)==ABORTED);
  puts("PASS production ABI4 auth, decoded duplicate/NUL rejection, replay/consume, stale generations, binary I/O, EOF, nonblocking and exact deadlines");
 }
+#include "port_compat.h"
 """
 with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))) as d:
     p = Path(d)
@@ -157,6 +176,9 @@ with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", str(Path.home() / 
         subprocess.run(
             [
                 "cc",
+                "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
+                "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
+                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 "-std=c11",
                 "-Wall",
                 "-Wextra",
@@ -168,10 +190,7 @@ with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", str(Path.home() / 
                 "-fno-sanitize-recover=all",
                 f"-DCONFIG_RMB_LISTENER_STACK_BYTES={stack_bytes}",
                 "-I" + str(ROOT / "include"),
-                "-I" + str(ROOT / "esp32_rom" / "tests"),
-                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 str(p / "network.c"),
-                str(ROOT / "esp32_rom" / "tests" / "port_native_impl.c"),
                 "-o",
                 str(p / "network"),
             ],

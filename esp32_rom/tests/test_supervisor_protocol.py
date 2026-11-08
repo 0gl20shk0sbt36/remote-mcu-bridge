@@ -99,6 +99,7 @@ int main(void) {
  busy=false;run(upload,body,sizeof body);assert(strstr(result,"enter-update")&&body_writes==old_writes);
  puts("PASS production ABI4 management + runtime: strict auth/fields/seq, immutable boot latch, real SHA/binding/footer commit, no hot activation, binary upload abort cleanup, busy-worker footer retry before restart");
 }
+#include "port_compat.h"
 """
 
 if __name__ == "__main__":

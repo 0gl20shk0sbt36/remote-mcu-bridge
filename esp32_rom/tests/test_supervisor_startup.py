@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 HEADERS = {
     "esp_err.h": """#pragma once
 #include <stdint.h>
+#include "rmb/port.h"
+#include "mbedtls/sha256.h"
 #include <stddef.h>
 typedef int esp_err_t;
 #define ESP_OK 0
@@ -45,9 +47,9 @@ typedef struct {uint8_t app_elf_sha256[32];} esp_app_desc_t;
 }
 
 PRE = r"""
+#define TAG "native-supervisor"
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
-#include "port_native.h"
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -66,24 +68,41 @@ PRE = r"""
 #include "esp_partition.h"
 #include "esp_app_desc.h"
 #define CONFIG_RMB_TOKEN "native-supervisor-test-token"
+#define ESP_LOGE(...) ((void)0)
 #define ESP_ERROR_CHECK(x) assert((x)==0)
 #define HEADER_US 100000LL
 #define UPLOAD_US 100000LL
 #define REQUEST_MAX 1024
+#define pdTRUE 1
+#define pdMS_TO_TICKS(x) (x)
+#define portMAX_DELAY -1
 #define portMUX_TYPE pthread_mutex_t
 #define portMUX_INITIALIZER_UNLOCKED PTHREAD_MUTEX_INITIALIZER
 #define portENTER_CRITICAL(x) pthread_mutex_lock(x)
 #define portEXIT_CRITICAL(x) pthread_mutex_unlock(x)
+typedef int TaskHandle_t;
+typedef int QueueHandle_t;
 typedef struct {pthread_mutex_t lock;pthread_cond_t changed;bool set;} native_sem;
+typedef native_sem *SemaphoreHandle_t;
 static pthread_mutex_t qlock=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t changed=PTHREAD_COND_INITIALIZER;
 static void *queued;
 static bool reject_queue,entered,hang_entry;
 static atomic_int feeds;
 static _Thread_local int current_task;
+static int xTaskGetCurrentTaskHandle(void) {return current_task;}
+static int64_t esp_timer_get_time(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (int64_t)t.tv_sec*1000000+t.tv_nsec/1000;}
+static int esp_task_wdt_add(void *p) {(void)p;return 0;}
+static int esp_task_wdt_reset(void) {atomic_fetch_add(&feeds,1);return 0;}
+static void vTaskDelay(int n) {assert(n==100); /* Native restart returns to verify ordering. */}
+static int esp_reset_reason(void) {return 0;}
 static int restarted,sequence,invalidated_at,restarted_at;
+static void esp_restart(void) {restarted++;restarted_at=++sequence;}
+static SemaphoreHandle_t xSemaphoreCreateBinary(void) {
  native_sem *s=calloc(1,sizeof *s);assert(s);assert(!pthread_mutex_init(&s->lock,NULL));assert(!pthread_cond_init(&s->changed,NULL));return s;
 }
+static void xSemaphoreGive(native_sem *s) {pthread_mutex_lock(&s->lock);s->set=true;pthread_cond_signal(&s->changed);pthread_mutex_unlock(&s->lock);}
+static void xSemaphoreTake(native_sem *s,int ticks) {assert(ticks==portMAX_DELAY);pthread_mutex_lock(&s->lock);while(!s->set)pthread_cond_wait(&s->changed,&s->lock);pthread_mutex_unlock(&s->lock);}
 static void vSemaphoreDelete(native_sem *s) {pthread_mutex_destroy(&s->lock);pthread_cond_destroy(&s->changed);free(s);}
 static unsigned char flash[0x100000];
 static const esp_partition_t partition={sizeof flash,0x220000};
@@ -95,6 +114,16 @@ static int esp_partition_erase_range(const esp_partition_t *p,size_t o,size_t n)
 static int esp_partition_write(const esp_partition_t *p,size_t o,const void *v,size_t n) {assert(p==&partition&&o+n<=sizeof flash);if(write_error)return -1;if(o<sizeof flash-4096)body_writes++;const uint8_t *b=v;for(size_t i=0;i<n;i++){assert((flash[o+i]&b[i])==b[i]);flash[o+i]&=b[i];}return 0;}
 static int esp_partition_mmap(const esp_partition_t *p,size_t o,size_t n,int mode,const void **v,unsigned *h) {assert(p==&partition&&!o&&n==sizeof flash&&mode==1);*v=(void *)(uintptr_t)0x42200000;*h=1;return 0;}
 static void esp_partition_munmap(unsigned h) {assert(h==1);}
+
+/* Port storage seam over the fixture's fake flash and mbedtls SHA-256. */
+int rmb_port_slot_geometry(uint32_t *size,uint32_t *footer){*size=sizeof flash;*footer=4096;return 0;}
+int rmb_port_slot_read(uint32_t o,void *d,uint32_t n){return esp_partition_read(&partition,o,d,n)?-1:0;}
+int rmb_port_slot_erase(uint32_t o,uint32_t n){return esp_partition_erase_range(&partition,o,n)?-1:0;}
+int rmb_port_slot_write(uint32_t o,const void *v,uint32_t n){return esp_partition_write(&partition,o,v,n)?-1:0;}
+int rmb_port_slot_sha256(uint32_t o,uint32_t n,uint8_t digest[32]){mbedtls_sha256_context c;mbedtls_sha256_init(&c);int rc=mbedtls_sha256_starts(&c,0);uint8_t b[512];while(!rc&&n){uint32_t k=n>sizeof b?sizeof b:n;if(rmb_port_slot_read(o,b,k)){mbedtls_sha256_free(&c);return -1;}rc=mbedtls_sha256_update(&c,b,k);o+=k;n-=k;}if(!rc)rc=mbedtls_sha256_finish(&c,digest);mbedtls_sha256_free(&c);return rc?-1:0;}
+int rmb_port_slot_map(uint32_t *text){mapped_base=(uintptr_t)0x42200000;*text=(uint32_t)mapped_base;return 0;}
+int rmb_port_slot_unmap(void){return 0;}
+int rmb_port_base_sha256(uint8_t digest[32]){memset(digest,0,32);return 0;}
 static const esp_app_desc_t *esp_app_get_description(void) {static const esp_app_desc_t a={{0}};return &a;}
 static int native_module_entry(const rmb_host *h) {
  assert(h->abi==4&&h->size==sizeof *h);
@@ -118,14 +147,17 @@ void module_host_configure(rmb_host *h) {(void)h;}
 """
 
 QUEUE = r"""
+static int xQueueSend(int q,supervisor_job **p,int ticks) {
  (void)q;(void)ticks;pthread_mutex_lock(&qlock);
  if(queued||reject_queue){pthread_mutex_unlock(&qlock);return 0;}
  queued=*p;pthread_cond_broadcast(&changed);pthread_mutex_unlock(&qlock);return pdTRUE;
 }
+static int xQueueReceive(int q,supervisor_job **p,int ticks) {
  (void)q;(void)ticks;pthread_mutex_lock(&qlock);
  while(!queued)pthread_cond_wait(&changed,&qlock);
  *p=queued;queued=NULL;pthread_mutex_unlock(&qlock);return pdTRUE;
 }
+#include "port_compat.h"
 """
 
 SUPPORT = r"""
@@ -134,12 +166,12 @@ static void service_fault_status(int fd) {reply(fd,pending_fault?"{\"ok\":true,\
 static void *thread(void *arg) {current_task=1;supervisor_worker(arg);return NULL;}
 static void reset_boot(bool committed) {
  memset(flash,255,sizeof flash);if(committed)memset(flash+sizeof flash-4096,0,4096);
- mapped_base=NULL;reserved_base=0;memset(&update,0,sizeof update);attempted=false;
+ mapped_base=0;data_reserve=0;memset(&update,0,sizeof update);attempted=false;
  atomic_store(&admitted,false);busy=installing=slot_invalid=false;
  supervisor_entry=(rmb_supervisor_entry){0};supervisor_fault=supervisor_active=supervisor_updating=supervisor_reboot_required=false;
  assert(module_runtime_prepare()==0);
  rmb_supervisor_entry_capture(&supervisor_entry,!module_runtime_update_allowed());
- supervisor_queue=1;supervisor_worker_handle=1;
+ supervisor_queue=(rmb_queue_t)(uintptr_t)1;supervisor_worker_handle=(rmb_task_t)(uintptr_t)1;
 }
 static void image(uint8_t out[76]) {
  module_header h={MODULE_MAGIC,4,sizeof h,76,0x42200028,4,(uint32_t)(uintptr_t)module_data_reserve,32,4,0x42200028};
@@ -200,6 +232,9 @@ def build_run(post):
         subprocess.run(
             [
                 "cc",
+                "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
+                "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
+                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 "-std=c11",
                 "-Wall",
                 "-Wextra",
@@ -211,8 +246,6 @@ def build_run(post):
                 "-fsanitize=undefined",
                 '-DMBEDTLS_CONFIG_FILE="native_mbedtls_config.h"',
                 "-I" + str(mbed / "include"),
-                "-I" + str(ROOT / "tests"),
-                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 "-fno-sanitize-recover=all",
                 "-I" + str(p),
                 "-I" + str(cj),
@@ -225,7 +258,6 @@ def build_run(post):
                 str(mbed / "library/sha256.c"),
                 str(mbed / "library/platform_util.c"),
                 "-lm",
-                str(ROOT / "tests" / "port_native_impl.c"),
                 "-o",
                 str(p / "native"),
             ],
@@ -243,7 +275,7 @@ int main(void) {
  assert(!module_runtime_install_begin(sizeof body));assert(!module_runtime_install_write(0,body,sizeof body));assert(!module_runtime_install_finish(digest));
  assert(!module_runtime_update_allowed()&&!module_runtime_ready()&&!entered);
  /* A real reset is required before any entry, even with a committed footer. */
- mapped_base=NULL;reserved_base=0;memset(&update,0,sizeof update);assert(!module_runtime_prepare());
+ mapped_base=0;data_reserve=0;memset(&update,0,sizeof update);assert(!module_runtime_prepare());
  supervisor_entry=(rmb_supervisor_entry){0};rmb_supervisor_entry_capture(&supervisor_entry,true);
  pthread_t t;assert(!pthread_create(&t,NULL,thread,NULL));
  reject_queue=true;assert(supervisor_start()==-1);assert(!supervisor_init_submitted&&!supervisor_active&&!supervisor_rtc.active);reject_queue=false;

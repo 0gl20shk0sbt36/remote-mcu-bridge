@@ -79,6 +79,7 @@ helpers = helpers.replace('#include "module_runtime.h"', "")
 preamble = r"""
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
+#include "rmb/port.h"
 #include <pthread.h>
 #include <signal.h>
 #include <stdatomic.h>
@@ -95,10 +96,10 @@ preamble = r"""
 #include <time.h>
 #include "cJSON.h"
 #include "rmb/service.h"
-#include "port_native.h"
 static int native_read(rmb_connection c,void *b,size_t n,bool nb) {int r=(int)recv(c,b,n,nb?MSG_DONTWAIT:0);return r<0&&(errno==EAGAIN||errno==EWOULDBLOCK)?RMB_IO_AGAIN:r;}
 static int native_write(rmb_connection c,const void *b,size_t n,bool nb) {int r=(int)send(c,b,n,nb?MSG_DONTWAIT:0);return r<0&&(errno==EAGAIN||errno==EWOULDBLOCK)?RMB_IO_AGAIN:r;}
 static const rmb_net_api native_net={.read=native_read,.write=native_write};
+static int64_t esp_timer_get_time(void);
 static const rmb_host native_host={.net=&native_net,.now_us=esp_timer_get_time};
 static const rmb_host *host=&native_host;
 #define CONFIG_ROM_SERVICE_TOKEN "public-native-test-token"
@@ -114,6 +115,9 @@ static void service_io_progress(void) {}
 #define UART_PARITY_DISABLE 0
 #define GPIO_PULLUP_ONLY 1
 #define ESP_OK 0
+#define pdTRUE 1
+#define pdMS_TO_TICKS(x) (x)
+#define ESP_LOGE(...) ((void)0)
 #define portMUX_TYPE int
 #define portMUX_INITIALIZER_UNLOCKED 0
 #define portENTER_CRITICAL(x) do {(void)(x);assert(!pthread_mutex_lock(&state_mutex));} while (0)
@@ -122,21 +126,25 @@ typedef int esp_err_t;
 typedef int (*vprintf_like_t)(const char *,va_list);
 static int owner, uart_owner, mode_changes, last_parity, gives, console_calls;
 static unsigned char uart_sent[256]; static atomic_size_t uart_sent_n; static atomic_bool uart_inject;
+static int64_t esp_timer_get_time(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (int64_t)t.tv_sec*1000000+t.tv_nsec/1000;}
 static int uart_set_baudrate(int p,unsigned b){(void)p;(void)b;mode_changes++;return 0;}
 static int uart_set_parity(int p,int b){(void)p;last_parity=b;return 0;}
 static int gpio_set_pull_mode(int p,int b){(void)p;(void)b;return 0;}
 static pthread_mutex_t state_mutex=PTHREAD_MUTEX_INITIALIZER, owner_mutex=PTHREAD_MUTEX_INITIALIZER;
+static int xSemaphoreTake(int p,int t){
  (void)p;int64_t until=esp_timer_get_time()+(int64_t)t*1000;
  do {int rc=pthread_mutex_trylock(&owner_mutex);if(!rc){owner=1;return 1;}assert(rc==EBUSY);
  if(!t)break;
  struct timespec d={0,1000000};nanosleep(&d,NULL);
  }while(esp_timer_get_time()<until);return 0;
 }
+static void xSemaphoreGive(int p){(void)p;assert(owner);owner=0;gives++;assert(!pthread_mutex_unlock(&owner_mutex));}
 static int uart_flush_input(int p){(void)p;assert(owner);uart_inject=false;return 0;}
 static void target_events(void *p){(void)p;assert(owner);}
 static int uart_write_bytes(int p,const void *d,size_t n){(void)p;assert(owner);assert(n<=sizeof uart_sent);memcpy(uart_sent,d,n);uart_sent_n=n;return (int)n;}
 static int uart_wait_tx_done(int p,int t){(void)p;(void)t;return 0;}
 static int uart_read_bytes(int p,void *d,size_t n,int t){(void)p;(void)t;assert(owner);if(atomic_exchange(&uart_inject,false)){assert(n>=5);memcpy(d,"pong\0",5);uart_inject=false;return 5;}return 0;}
+static void vTaskDelay(int t){struct timespec d={t/1000,(long)(t%1000)*1000000};nanosleep(&d,NULL);}
 """
 tests = r"""
 static void check_auth(const char *text,bool uart,bool expected,unsigned expected_baud) {
@@ -214,6 +222,7 @@ int main(void){
  puts("PASS actual C stream auth, malformed/duplicate/range rejection, ring overwrite/truncation, console tee, UART busy/no-side-effects/release and log disconnect");
  return 0;
 }
+#include "port_compat.h"
 """
 with tempfile.TemporaryDirectory(
     prefix="v14-streams-", dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
@@ -223,20 +232,20 @@ with tempfile.TemporaryDirectory(
     subprocess.run(
         [
             "cc",
+            "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
+            "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
+            '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
             "-std=c11",
             "-pthread",
             "-Wall",
             "-Wextra",
             "-Werror",
             "-I" + str(ROOT / "main"),
-            "-I" + str(ROOT / "tests"),
-            '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
             "-I" + str(ROOT.parent / "include"),
             "-I" + str(CJSON),
             str(p / "test.c"),
             str(CJSON / "cJSON.c"),
             "-lm",
-            str(ROOT / "tests" / "port_native_impl.c"),
             "-o",
             str(p / "test"),
         ],

@@ -1,8 +1,6 @@
 /* Native shims exercise the production include, not a watchdog reimplementation. */
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
-#include "rmb/port.h"
-#include "port_native.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -13,53 +11,37 @@
 #define RTC_NOINIT_ATTR
 #define portMUX_INITIALIZER_UNLOCKED 0
 typedef int portMUX_TYPE;
-static int lock_depth, isr, reset_count, reset_reason = (int)RMB_RST_POWER_ON;
+static int lock_depth, isr, reset_count, reset_reason = 1;
 static int64_t clock_us;
 static char response[1024];
-#define ESP_RST_TASK_WDT ((int)RMB_RST_TASK_WATCHDOG)
-#define ESP_RST_INT_WDT ((int)RMB_RST_INTERRUPT_WATCHDOG)
-#define ESP_RST_WDT ((int)RMB_RST_OTHER)
-#define ESP_RST_PANIC ((int)RMB_RST_PANIC)
-static void enter(rmb_lock_t *p) {
+#define ESP_RST_TASK_WDT 6
+#define ESP_RST_INT_WDT 5
+#define ESP_RST_WDT 7
+#define ESP_RST_PANIC 4
+static void enter(portMUX_TYPE *p) {
     (void)p;
     assert(lock_depth == 0);
     ++lock_depth;
 }
-static void leave(rmb_lock_t *p) {
+static void leave(portMUX_TYPE *p) {
     (void)p;
     assert(lock_depth == 1);
     --lock_depth;
 }
-/* Port contract implemented against this fixture's clock/lock instrumentation. */
-bool rmb_port_in_isr(void) {
-    return isr != 0;
+#define portENTER_CRITICAL(p) enter(p)
+#define portEXIT_CRITICAL(p) leave(p)
+static int xPortInIsrContext(void) {
+    return isr;
 }
-int64_t rmb_port_now_us(void) {
+static int64_t esp_timer_get_time(void) {
     return clock_us;
 }
-rmb_reset_reason rmb_port_reset_reason(void) {
-    return (rmb_reset_reason)reset_reason;
+static int esp_reset_reason(void) {
+    return reset_reason;
 }
-void rmb_port_restart(void) {
+static void esp_restart(void) {
     assert(lock_depth == 0);
     ++reset_count;
-}
-void rmb_port_lock_enter(rmb_lock_t *p) {
-    enter(p);
-}
-void rmb_port_lock_exit(rmb_lock_t *p) {
-    leave(p);
-}
-void rmb_port_log(int level, const char *tag, const char *format, ...) {
-    (void)level;
-    (void)tag;
-    (void)format;
-}
-int rmb_port_wdt_register_current(void) {
-    return 0;
-}
-int rmb_port_wdt_feed(void) {
-    return 0;
 }
 static void reply(int fd, const char *s) {
     (void)fd;
@@ -71,7 +53,7 @@ static void reply(int fd, const char *s) {
 static void fresh(void) {
     memset(&lease_rtc, 0, sizeof lease_rtc);
     clock_us = 0;
-    reset_reason = (int)RMB_RST_POWER_ON;
+    reset_reason = 1;
     reset_count = 0;
     isr = 0;
     service_watchdog_boot();
@@ -226,7 +208,7 @@ static void test_journal_ack_retention(void) {
     assert(strstr(response, "\"seq\":1"));
     assert(memcmp(&before, &lease_rtc, sizeof before) == 0);
     clock_us = 0;
-    reset_reason = (int)RMB_RST_SOFTWARE;
+    reset_reason = 3;
     service_watchdog_boot();
     assert(service_fault_pending());
     assert(lease_rtc.fault.boot == origin.boot);
@@ -235,7 +217,7 @@ static void test_journal_ack_retention(void) {
     assert(lease_rtc.boot == 2);
     assert(lease_rtc.current_reset == 3);
     assert(!service_watchdog_begin_init());
-    reset_reason = (int)RMB_RST_SOFTWARE;
+    reset_reason = 3;
     service_watchdog_boot();
     assert(lease_rtc.fault.seq == 1);
     assert(lease_rtc.fault.reset_cause == 3);
@@ -246,7 +228,7 @@ static void test_journal_ack_retention(void) {
     assert(!service_fault_ack(origin.seq));
     /* Ack does not enable leases. A separately authorized new boot may start. */
     assert(service_watchdog_open("root", 1000) < 0);
-    reset_reason = (int)RMB_RST_SOFTWARE;
+    reset_reason = 3;
     service_watchdog_boot();
     start();
     uart = service_watchdog_open("control", 1000);
@@ -280,7 +262,7 @@ static void test_hardware_crc(void) {
     assert(lease_rtc.fault.reset_cause == ESP_RST_INT_WDT);
     lease_rtc.fault.role[0] ^= 1;
     assert(!lease_record_valid());
-    reset_reason = (int)RMB_RST_SOFTWARE;
+    reset_reason = 3;
     service_watchdog_boot();
     assert(lease_record_valid());
     assert(!service_fault_pending());
@@ -337,7 +319,7 @@ static void test_new_hardware_fault(void) {
     service_watchdog_poll();
     uint32_t old = lease_rtc.fault.seq;
     assert(old == 1);
-    reset_reason = (int)RMB_RST_SOFTWARE;
+    reset_reason = 3;
     clock_us = 0;
     service_watchdog_boot();
     assert(service_fault_pending());
@@ -380,7 +362,7 @@ static void test_supervisor_fault_journal(void) {
     assert(lease_rtc.fault.age_ms == 1 && lease_rtc.fault.timeout_ms == 1);
     service_supervisor_fault(3, false, 18, 100, 700, 1000, 1400);
     assert(lease_rtc.fault.seq == 1 && lease_rtc.fault.checkpoint == 17);
-    reset_reason = (int)RMB_RST_SOFTWARE;
+    reset_reason = 3;
     service_watchdog_boot();
     assert(service_fault_pending());
     assert(lease_rtc.fault.reset_cause == 3);

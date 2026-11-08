@@ -37,6 +37,10 @@ def flat(text):
 
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT / "main/resident.c").read_text()
+platform = "\n".join(
+    p.read_text() for p in sorted((ROOT / "main/platform").glob("*.c"))
+)
+port_header = (ROOT.parent / "include/rmb/port.h").read_text()
 business = (ROOT / "module/business.c").read_text()
 backend = (ROOT / "module/platform/esp_idf_io.c").read_text()
 config_files = list((ROOT / "module").rglob("Kconfig*"))
@@ -62,7 +66,9 @@ stage = next(r for r in rows if r[0] == "staging")
 assert stage[2] == "0x40" and stage[3] == 0x110000 and stage[4] >= 1024 * 1024
 assert next(r for r in rows if r[0] == "factory")[4] == 0x100000
 assert len(b"STM32ROM_DISCOVER_V1") == 20
-assert flat('sizeof("STM32ROM_DISCOVER_V1") - 1') in flat(source)
+# Discovery answered the legacy query; it now lives in the platform layer.
+assert flat('sizeof(LEGACY_QUERY) - 1') in flat(platform)
+assert "STM32ROM_DISCOVER_V1" in platform and "STM32ROM_DISCOVER_V1" not in source
 assert at(business, "supervisor_validate(device, &source") < at(
     business, "supervisor_download(&io, device"
 )
@@ -143,7 +149,8 @@ assert all(
     )
 )
 assert not any(x in probe for x in ("erase_image(", "cmd(i,0x31)", "cmd(i,0x21)", "cmd(i,0x92)"))
-assert flat("rom_probe(") not in flat(source)[at(source, "void app_main(void)") :]
+# The portable resident never runs ROM operations itself.
+assert flat("rom_probe(") not in flat(source)[at(source, "void rmb_resident_main(void)") :]
 # The resident base owns networking/management, not target UART/GPIO state.
 for call in (
     "uart_driver_install(",
@@ -172,9 +179,11 @@ assert builder.index(
     "if hashlib.sha256(base_elf.read_bytes()).hexdigest() != base_hash:"
 ) < builder.index("out.write_bytes(image)")
 runtime = (ROOT / "main/module_runtime.c").read_text()
-assert flat("memcmp(binding,esp_app_get_description()->app_elf_sha256,sizeof binding)") in flat(
-    runtime
-)
+assert flat("rmb_port_base_sha256(base)") in flat(runtime)
+assert flat("memcmp(binding,base,sizeof binding)") in flat(runtime)
+# Identity comes from the platform: the ESP adapter reads the app description.
+assert flat("esp_app_get_description()") in flat(platform)
+assert flat("description->app_elf_sha256") in flat(platform)
 assert flat("module_runtime_update_allowed()") in flat(runtime)
 assert flat("module_ops") not in flat(runtime)
 print(

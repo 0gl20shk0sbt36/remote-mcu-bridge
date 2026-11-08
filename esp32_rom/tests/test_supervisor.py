@@ -58,6 +58,9 @@ class SupervisorTests(unittest.TestCase):
         subprocess.run(
             [
                 "cc",
+                "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
+                "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
+                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 "-std=c11",
                 "-Wall",
                 "-Wextra",
@@ -65,7 +68,6 @@ class SupervisorTests(unittest.TestCase):
                 "-shared",
                 "-fPIC",
                 str(p / "parser.c"),
-                str(ROOT / "tests" / "port_native_impl.c"),
                 "-o",
                 str(p / "parser.so"),
             ],

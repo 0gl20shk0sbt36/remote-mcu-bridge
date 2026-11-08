@@ -58,6 +58,10 @@ extern int rmb_test_reset_reason_value __attribute__((unused));
 extern int64_t rmb_test_now_us_value __attribute__((unused));
 extern void *rmb_test_current_task __attribute__((unused));
 extern uint32_t rmb_test_stack_min_free __attribute__((unused));
+/* Optional per-fixture behavior: when set, mutex take delegates to it. The hook
+ * must return 0 when it acquired the lock and -1 on timeout. */
+extern int (*rmb_test_mutex_take_hook)(rmb_mutex_t, uint32_t) __attribute__((unused));
+extern void (*rmb_test_mutex_give_hook)(rmb_mutex_t) __attribute__((unused));
 
 struct native_task {
     int unused;

@@ -109,6 +109,7 @@ int main(void) {
  assert(!stm_exact(77,NULL,0,false,1000));assert(!hello_exact(77,NULL,0,false,1000,1));
  puts("PASS actual base/network/STM/hello final-byte deadlines: before accepted, equality/late rejected for read/write/replay");
 }
+#include "port_compat.h"
 """
 with tempfile.TemporaryDirectory(
     prefix="rmb-exact-deadline-", dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
@@ -120,6 +121,9 @@ with tempfile.TemporaryDirectory(
     subprocess.run(
         [
             "cc",
+            "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
+            "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
+            '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
             "-std=c11",
             "-Wall",
             "-Wextra",
@@ -130,11 +134,7 @@ with tempfile.TemporaryDirectory(
             "-no-pie",
             "-fno-sanitize-recover=all",
             "-I" + str(ROOT / "include"),
-            "-I" + str(ROOT / "tests"),
-                "-I" + str(ROOT / "esp32_rom" / "tests"),
-            '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
             str(path / "deadline.c"),
-            str(ROOT / "esp32_rom" / "tests" / "port_native_impl.c"),
             "-o",
             str(path / "deadline"),
         ],

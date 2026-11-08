@@ -1,4 +1,6 @@
 /* Native implementation of the resident port contract (fixtures only). */
+#define _POSIX_C_SOURCE 200809L
+#include <time.h>
 #include "rmb/port.h"
 
 /* Instrumentation and hooks (declared extern in port_native.h). */
@@ -10,6 +12,8 @@ int rmb_test_reset_reason_value = RMB_RST_POWER_ON;
 void *rmb_test_current_task = (void *)1;
 int64_t rmb_test_now_us_value = -1;
 uint32_t rmb_test_stack_min_free = 4096;
+int (*rmb_test_mutex_take_hook)(rmb_mutex_t, uint32_t);
+void (*rmb_test_mutex_give_hook)(rmb_mutex_t);
 
 /* ── Time ─────────────────────────────────────────────────────────────── */
 int64_t rmb_port_now_us(void) {
@@ -28,7 +32,8 @@ void rmb_port_delay_ticks(uint32_t ticks) {
 }
 
 /* ── Logging ──────────────────────────────────────────────────────────── */
-void rmb_log_capture(const char *bytes, size_t length) {
+/* Weak: fixtures that compile the resident provide the real capture. */
+__attribute__((weak)) void rmb_log_capture(const char *bytes, size_t length) {
     (void)bytes;
     (void)length;
 }
@@ -114,7 +119,8 @@ int rmb_port_mutex_create(rmb_mutex_t *out) {
 }
 
 int rmb_port_mutex_take(rmb_mutex_t mutex, uint32_t ticks) {
-    (void)ticks;
+    if (rmb_test_mutex_take_hook)
+        return rmb_test_mutex_take_hook(mutex, ticks);
     if (mutex->locked)
         return -1;
     mutex->locked = 1;
@@ -122,6 +128,10 @@ int rmb_port_mutex_take(rmb_mutex_t mutex, uint32_t ticks) {
 }
 
 void rmb_port_mutex_give(rmb_mutex_t mutex) {
+    if (rmb_test_mutex_give_hook) {
+        rmb_test_mutex_give_hook(mutex);
+        return;
+    }
     assert(mutex->locked);
     mutex->locked = 0;
 }
