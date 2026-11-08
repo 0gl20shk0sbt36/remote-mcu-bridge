@@ -78,10 +78,13 @@ bool socket_exact(int fd, void *buffer, size_t size, bool writing, int64_t deadl
     return rmb_port_now_us() < deadline;
 }
 
+/* Single-line reply with the resident header deadline; false means the peer is gone. */
 bool reply(int fd, const char *text) {
     return socket_exact(fd, (void *)text, strlen(text), true, rmb_port_now_us() + HEADER_US);
 }
 
+/* Error reply. Only fixed strings or validated text may be passed: the message
+ * is echoed to the client and logged, so it must never carry credentials. */
 void failure(int fd, const char *message) {
     RMB_LOGE(TAG, "Request failed: %s", message);
     cJSON *o = cJSON_CreateObject();
@@ -98,6 +101,8 @@ void failure(int fd, const char *message) {
     cJSON_Delete(o);
 }
 
+/* Accept only integral JSON numbers that fit uint32; cJSON stores numbers as
+ * doubles, so anything with a fraction or exponent is rejected here. */
 bool number(cJSON *item, uint32_t *out) {
     if (!cJSON_IsNumber(item) || !isfinite(item->valuedouble) || item->valuedouble < 0 ||
         item->valuedouble > UINT32_MAX || floor(item->valuedouble) != item->valuedouble)
@@ -129,6 +134,7 @@ bool module_service_available(void) {
 
 #include "service_watchdog.inc"
 
+/* Fill the service-facing contract. The service never sees internal helpers. */
 void module_host_configure(rmb_host *h) {
     h->net = &rmb_network_api;
     h->now_us = rmb_port_now_us;
@@ -139,6 +145,8 @@ void module_host_configure(rmb_host *h) {
     h->watchdog_close = service_watchdog_close;
 }
 
+/* Compile-time configuration bounds: a short token is brute-forceable over the
+ * LAN and an oversized SSID/password cannot be stored by the network stack. */
 static bool configuration_valid(void) {
     size_t token = strlen(RMB_CONFIG_TOKEN);
     size_t ssid = strlen(RMB_CONFIG_SSID);

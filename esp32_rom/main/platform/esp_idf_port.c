@@ -31,6 +31,9 @@ static esp_partition_mmap_handle_t mapped_handle;
 static const void *mapped_base;
 static uintptr_t reserved_base;
 
+/* Per-function semantics (ranges, ownership, failure modes) are documented once
+ * in include/rmb/port.h; these bodies are deliberately thin mappings. */
+
 /* ── Time ─────────────────────────────────────────────────────────────── */
 int64_t rmb_port_now_us(void) {
     return esp_timer_get_time();

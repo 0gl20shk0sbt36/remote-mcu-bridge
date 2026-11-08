@@ -113,6 +113,8 @@ static void discovery_task(void *arg) {
     }
 }
 
+/* Bring the interface up and start discovery. Returns 0 once association is
+ * requested; readiness is reported separately through rmb_resident_net_event. */
 int rmb_port_net_start(const char *ssid, const char *password) {
     esp_err_t rc = nvs_flash_init();
     if (rc == ESP_ERR_NVS_NO_FREE_PAGES || rc == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -154,6 +156,8 @@ int rmb_port_net_start(const char *ssid, const char *password) {
     return 0;
 }
 
+/* Report the current address set. Returns 0 until an address exists, which is
+ * what the resident uses as "network usable". */
 int rmb_port_net_info(rmb_net_info *info) {
     if (!info || !station)
         return 0;

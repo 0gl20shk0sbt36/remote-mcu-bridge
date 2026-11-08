@@ -289,6 +289,8 @@ static bool value(parser *p) {
     }
     return true;
 }
+/* Read one bounded header line, validate it as JSON with exactly one string
+ * token, and decide whether the service sees the raw line (replay) or not. */
 static bool auth_header(connection_slot *s) {
     /* Keep the raw line separate from decoded validation: legacy services must
      * see byte-for-byte replay, not JSON reserialization or a second auth ACK. */

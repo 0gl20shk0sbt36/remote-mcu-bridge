@@ -91,6 +91,8 @@ static int remap(void) {
     return module_runtime_prepare();
 }
 
+/* Header/size/binding admission: the module must fit the slot, declare the
+ * addresses this boot actually mapped, and carry the running base hash. */
 static int sane(module_header *h) {
     if (rmb_port_slot_read(0, h, sizeof *h))
         return -1;
@@ -117,6 +119,8 @@ bool module_runtime_code_pointer(const void *p) {
            v - admitted_header.text_addr < admitted_header.text_size && !(v & 1);
 }
 
+/* Copy data/BSS into the reserved DRAM window, then run entry exactly once on
+ * the supervised worker. Listeners only become callable after success. */
 static int load(void) {
     module_header h;
     if (sane(&h))
