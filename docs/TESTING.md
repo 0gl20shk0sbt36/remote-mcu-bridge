@@ -59,6 +59,10 @@
 - 监督：`module-test-hang` 触发 TWDT 复位（`reset_reason=6`），重连读到 seq=1/reason=2 故障，错误序号被拒、正确确认通过、`clear-fault` 恢复；恢复后 STM SRAM 重载并再次 PONG。
 - 未验证：STM Flash 擦写（本轮仅 SRAM）、物理断电、逻辑分析仪时序、其它板卡、SPI 服务。见 [实机记录](validation/port-layer-20261108.md)。
 
+### 历史证据文件
+
+- [ABI4 复核问题处置](validation/abi4-review-resolution.md)、[ABI4 本地基线](validation/abi4-local-20261108.json)、[服务编写实机记录](validation/service-authoring-live-20261107.json)、[SPI 调查数据](validation/spi-investigation-20261107.json)。这些是历史快照，不代表当前镜像。
+
 ### 历史 ABI3 本地执行结果（2026-11-07）
 
 - 整理后的源码正本：**22/22 CTest 通过**，包含原工程适用测试、注册表、客户端、发现、probe、SPI 原始数据/采样接口及最小服务 A/B 的原生检查。最后完整运行在新增深度诊断与服务清单支持后执行。
@@ -158,6 +162,10 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 - STM: `status`/`probe` (ACK 0x79, Get=0x10, GetVersion=0x22, no erase/write), a 10,620-byte SRAM download with readback and Go, and `PONG SRAM` over both raw and framed sessions.
 - Supervision: `module-test-hang` produced a TWDT reset (`reset_reason=6`); after reconnect the device reported seq=1/reason=2, a wrong sequence was rejected, the exact one accepted, and `clear-fault` restored `module_ready=true`; the SRAM application was then reloaded and answered again.
 - Not covered: STM Flash erase/write (SRAM only), physical power loss, logic-analyzer timing, other boards, the SPI service. See the [hardware record](validation/port-layer-20261108.md).
+
+### Historical evidence files
+
+- [ABI4 review resolution](validation/abi4-review-resolution.md), [ABI4 local baseline](validation/abi4-local-20261108.json), [service authoring on hardware](validation/service-authoring-live-20261107.json), [SPI investigation data](validation/spi-investigation-20261107.json). Historical snapshots, not the current image.
 
 ### Historical ABI3 local results (2026-11-07)
 

@@ -137,6 +137,10 @@ python3 tools/module_ctl.py ack-fault --fault-seq "$FAULT_SEQ" --host "$DEVICE_I
 
 ---
 
+### 8. Windows 快捷脚本
+
+`tools/9-STM32串口.bat` 与 `tools/10-STM32进程串口.bat` 是同一仓库里的 Windows 便捷包装：前者在当前控制台跑 `wifidebug.py uart`（交互式串口桥），后者以进程模式运行（stdin/stdout 转发，适合被其他程序调用）。两者都读环境变量 `ESP_HOST`（设备 IP），并自动优先使用 `tools\venv` 或 `tools\.venv` 里的 Python，否则回退到 `py -3`。它们只是 `tools/wifidebug.py` 的壳，跨平台功能以 Python CLI 为准。
+
 ## English
 
 ### 1. Keep the four images separate
@@ -260,3 +264,7 @@ python3 tools/module_ctl.py ack-fault --fault-seq "$FAULT_SEQ" --host "$DEVICE_I
 Never invent a sequence. ACK acknowledges diagnostics, not quarantine removal. `clear-fault` requires acknowledged reports and cannot bypass boot/entry gates. Typically repair, enter-update, upload, restart; consult [watchdog recovery](WATCHDOG_RECOVERY.md) before preserving/restarting old code. `test-hang` is deliberate destructive fault injection, not a health check.
 
 Diagnose resident status, full fault, networking/token/ELF binding, service protocol/resources, then target hardware. Management availability does not prove wiring or module readiness. Do not automatically unprotect option bytes or repeatedly perform destructive retries.
+
+### 8. Windows helper scripts
+
+`tools/9-STM32串口.bat` and `tools/10-STM32进程串口.bat` are convenience wrappers that run `wifidebug.py uart` on Windows: the first in the current console (interactive bridge), the second in process mode (stdin/stdout forwarding for other programs). Both read the `ESP_HOST` environment variable (device IP) and prefer a `tools\venv` or `tools\.venv` interpreter, falling back to `py -3`. They are thin shells over `tools/wifidebug.py`; the Python CLI is the supported interface.

@@ -60,8 +60,8 @@
 | 新增 | `<platform>/net_*.c` | 关联/地址/发现；ESP 版 175 行 |
 | 新增 | `<platform>/entry_*.c` | 启动后调用 `rmb_resident_main()`（ESP 版 20 行） |
 | 新增 | `<platform>/port_*.h` | §3 的平台头（ESP 版 54 行） |
-| 修改 | 构建系统 | 把上述文件编入、传 `-DRMB_PORT_PLATFORM_HEADER=...`、链接 BSD socket 与 SHA 实现 |
-| 新增/修改 | `backends/<id>/backend.json` | `implementation`、`driver`、`capabilities`、`requirements`、`supported_targets` |
+| 修改 | 构建系统 | 把上述文件编入、传 `-DRMB_PORT_PLATFORM_HEADER=...`、链接 BSD socket 与 SHA 实现；驱动接口契约见 [注册表契约](REGISTRY.md) |
+| 新增/修改 | `backends/<id>/backend.json` | `implementation`、`driver`、`capabilities`、`requirements`、`supported_targets`；字段与校验规则见 [注册表契约](REGISTRY.md)，可从 `templates/backend/backend.json.example` 起步 |
 | 新增/修改 | `boards/<board>.json` | `target`、`target_device`、`pins`、`defaults`（指向唯一的 `config/build.defaults`） |
 | 修改 | `config/build.defaults` | 新平台的编译期配置（单一文件原则） |
 | **不改** | `esp32_rom/main/*.c`、`*.inc`、`core/`、`include/rmb/` | 可移植部分；改动会破坏边界测试 |
@@ -88,7 +88,7 @@
 
 ### 7. 服务的移植
 
-服务按平台 SDK 正常写（UART/GPIO/SPI 等），通过 `rmb_host` 使用底座能力；不得新增对 `rmb_*` 底座私有符号的依赖（链接期会暴露）。默认 `stm-uart` 服务是 ESP-IDF 实现，换平台需按新 SDK 重写驱动层；内置 BL 抽象（统一串口烧录协议）尚未实现，属后续工作。
+服务按平台 SDK 正常写（UART/GPIO/SPI 等），通过 `rmb_host` 使用底座能力；连接所有权/鉴权/更新不变量的细节见 [ESP 移植指南](ESP_PORTING_GUIDE.md)（ESP 适配实现，语义跨平台通用）；不得新增对 `rmb_*` 底座私有符号的依赖（链接期会暴露）。默认 `stm-uart` 服务是 ESP-IDF 实现，换平台需按新 SDK 重写驱动层；内置 BL 抽象（统一串口烧录协议）尚未实现，属后续工作。
 
 ### 8. 验收清单（缺一项就不算移植完成）
 
@@ -158,7 +158,7 @@ A service image is not an ordinary ELF. `build_module.py` imports base addresses
 
 ### 7. Porting services
 
-Services are written against the host SDK (UART/GPIO/SPI) and use resident capabilities only through `rmb_host`; they must not add dependencies on private `rmb_*` symbols (the linker exposes any attempt). The default `stm-uart` service is ESP-IDF code and needs a new driver layer per platform; the built-in bootloader abstraction (one serial protocol) does not exist yet.
+Services are written against the host SDK (UART/GPIO/SPI) and use resident capabilities only through `rmb_host`; connection ownership, authentication and update invariants are detailed in the [ESP porting guide](ESP_PORTING_GUIDE.md) (an ESP adapter, but the semantics are portable); they must not add dependencies on private `rmb_*` symbols (the linker exposes any attempt). The default `stm-uart` service is ESP-IDF code and needs a new driver layer per platform; the built-in bootloader abstraction (one serial protocol) does not exist yet.
 
 ### 8. Acceptance checklist
 
