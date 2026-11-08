@@ -49,7 +49,15 @@
 - 真实执行：完整 CTest **31/31** 通过（含新增 port_boundary、build_config 20 项、registry 11 项）；ESP-IDF `safe` 与 `compile-enabled`（带合成凭据）均重新完整构建通过；默认 `stm-uart` 与可选 `stm-spi` 对新底座的真实交叉链接通过（合成取指地址，NOT DEPLOYABLE）。
 - 抽取型原生夹具迁移完成：9 个夹具改用共享端口测试桩（`port_native.{h,c}`、`port_mock_platform.h`、`port_compat.h`），断言未放宽（计数、暂停/恢复 epoch、拒绝事务、截止期边界、故障日志语义均保留）。
 - 模块构建器改为在编译数据库中识别 `resident.c`（兼容旧的 `service.c` 名）。
-- 本轮未烧录、未改 STM Flash、未做新实机验证；历史 ABI4 实机证据仍适用于此前镜像，端口重构后的固件需要重新实机验收。
+- 端口重构后的固件已完成重新烧录与实机验收（见本文上方"端口层固件实机验收"）；本轮仍未擦写 STM Flash、未做物理断电与 SPI 服务验证。
+
+### 端口层固件实机验收（2026-11-08）
+
+- 重构后固件重新烧录并通过整片校验：底座 ELF `9823c74c…`、合并镜像 `5a5b79b5…`。
+- 默认 `stm-uart` 服务（52,772 B）按设备上报地址构建，安装后 `module_ready=true`；错误取指地址的镜像被设备拒绝，证明准入校验有效。
+- STM：`status`/`probe`（ACK 0x79、Get=0x10、GetVersion=0x22、无擦写）、10,620 B SRAM 下载+回读+Go、raw 与 framed 两种会话的 `PONG SRAM`。
+- 监督：`module-test-hang` 触发 TWDT 复位（`reset_reason=6`），重连读到 seq=1/reason=2 故障，错误序号被拒、正确确认通过、`clear-fault` 恢复；恢复后 STM SRAM 重载并再次 PONG。
+- 未验证：STM Flash 擦写（本轮仅 SRAM）、物理断电、逻辑分析仪时序、其它板卡、SPI 服务。见 [实机记录](validation/port-layer-20261108.md)。
 
 ### 历史 ABI3 本地执行结果（2026-11-07）
 
@@ -142,6 +150,14 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 - The nine extraction fixtures were migrated onto shared port test doubles (`port_native.{h,c}`, `port_mock_platform.h`, `port_compat.h`) with assertions unchanged in strength (counters, pause/resume epochs, rejected transactions, deadline boundaries and fault-journal semantics all preserved).
 - The module builder now recognises `resident.c` in the compile database, falling back to the old `service.c` name.
 - No flashing, no STM Flash writes and no new hardware claim this round; the earlier ABI4 hardware evidence applies to the previous image, and the ported firmware still requires its own hardware acceptance.
+
+### Port-layer firmware hardware acceptance (2026-11-08)
+
+- The refactored firmware was re-flashed and the whole image verified: resident ELF `9823c74c…`, merged image `5a5b79b5…`.
+- The default `stm-uart` service (52,772 B) was built against the device-reported addresses and installed to `module_ready=true`; an image built for a wrong text address was rejected by the device, proving the admission check.
+- STM: `status`/`probe` (ACK 0x79, Get=0x10, GetVersion=0x22, no erase/write), a 10,620-byte SRAM download with readback and Go, and `PONG SRAM` over both raw and framed sessions.
+- Supervision: `module-test-hang` produced a TWDT reset (`reset_reason=6`); after reconnect the device reported seq=1/reason=2, a wrong sequence was rejected, the exact one accepted, and `clear-fault` restored `module_ready=true`; the SRAM application was then reloaded and answered again.
+- Not covered: STM Flash erase/write (SRAM only), physical power loss, logic-analyzer timing, other boards, the SPI service. See the [hardware record](validation/port-layer-20261108.md).
 
 ### Historical ABI3 local results (2026-11-07)
 
