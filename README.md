@@ -6,12 +6,12 @@
 
 ### 状态与边界
 
-- 当前源码为 **ABI4 通用底座 + 独立服务**；STM32 擦写、探测、目标复位与 UART/SPI 属于服务，底座不含 ROM 回调。先前实机报告为 ABI3，不能冒充新版实机验收；ABI3 模块不能装入 ABI4 底座。
+- 当前源码为 **ABI4 通用底座 + 独立服务**；STM32 擦写、探测、目标复位与 UART/SPI 属于服务，底座不含 ROM 回调。2026-11-08 已完成独立 [ABI4 实机验收](docs/validation/abi4-hardware-20261108.md)；历史 ABI3 报告仍单列，ABI3 模块不能装入 ABI4 底座。
 - 服务使用 `include/rmb/service.h` 的网络与监督接口，显式维护看门狗角色；故障报告可由重连客户端从管理端口读取并按序号确认。
 - 原生测试验证生产核心算法与模拟 I/O，不是可部署的第二个后端。
 - 其他平台的模板仅供移植设计使用，**不受支持、不能视为可构建或可运行的实现**。
 - 默认关闭网络服务及模块运行入口。启用占位配置只用于编译检查；不是部署配置，不应烧录。
-- 本文不声明 CI 已运行，不声明实机、掉电恢复或新板卡已经验证。请以当前提交的实际命令输出及独立硬件报告为准。
+- 本地原生 **28/28**、safe/enabled 交叉构建及该固定板组合的 ABI4 实机验收已完成；未执行远程 CI，未测试真实写入中断电或新板卡。以实际命令输出和独立报告为准。
 - 网络控制使用明文、共享令牌的可信局域网协议；不是 TLS。只能部署在隔离可信网络，不得直接暴露互联网或转发端口。
 
 ### 快速开始：无需硬件
@@ -101,12 +101,12 @@ A network-managed MCU bridge separating a portable update state machine and STM3
 
 ### Status and limits
 
-- Current sources use **ABI4 generic resident + independent services**. STM32 programming/probing/reset and target UART/SPI belong to the service, not resident callbacks. Earlier hardware reports validate ABI3, not this revision; ABI3 modules cannot load on ABI4.
+- Current sources use **ABI4 generic resident + independent services**. STM32 programming/probing/reset and target UART/SPI belong to the service, not resident callbacks. Independent [ABI4 hardware validation](docs/validation/abi4-hardware-20261108.md) ran on 2026-11-08; earlier ABI3 reports remain historical. ABI3 modules cannot load on ABI4.
 - Services use `include/rmb/service.h` and explicitly maintain watchdog-role leases. Authenticated reconnecting clients retrieve diagnostics and acknowledge the exact fault sequence.
 - Native tests exercise production algorithms and simulated I/O; they are not a second deployable backend.
 - Other platform templates are design scaffolding: **unsupported, not buildable or runnable implementations**.
 - Network service and module execution entry points are disabled by default. Placeholder-enabled configuration is for compilation only, not deployment or flashing.
-- This document does not claim a CI run, hardware validation, power-loss recovery validation, or verification of new boards. Use actual output for the current revision and separate hardware reports as evidence.
+- Local 28/28 CTest, safe/enabled cross-builds and ABI4 validation on this fixed bench combination passed. Remote CI, physical mid-write power loss and new boards remain untested; see actual outputs and the hardware report.
 - Network management uses a plaintext, shared-token trusted-LAN protocol, not TLS. Use an isolated trusted network; never expose it directly to the Internet or forward its ports.
 
 ### Quick start without hardware

@@ -15,6 +15,15 @@ config RMB_PORT
  int "Advertised default service port (module owns listener)"
  range 1024 65535
  default 3333
+config RMB_LISTENER_STACK_BYTES
+ int "Service listener task stack (bytes, per registered listener)"
+ range 4096 32768
+ default 12288
+ help
+  Includes the synchronous service callback, SDK drivers, logging and libc.
+  The STM service overflowed a 6144-byte listener in real hardware tests.
+  Monitor rmb-net stack_min_free_bytes after representative requests.
+  Four listeners can be registered; stack allocation failure aborts init.
 config RMB_DISCOVERY_PORT
  int "UDP discovery port"
  range 1024 65535

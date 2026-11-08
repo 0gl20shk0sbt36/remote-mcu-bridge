@@ -7,9 +7,20 @@
 - 完整 CTest **28/28 通过**，包含 ROM E2E、生产通用网络、通用监督/更新、服务看门狗、故障客户端及 hello A/B；未因迁移而跳过已注册的失败项。
 - 真实 ESP-IDF 5.5.5 `safe` 与 `compile-enabled` 底座构建通过；启用配置要求 IWDT、TWDT panic 和 panic 后重启，防止只报警不恢复。
 - STM 服务、hello A/B 对 ABI4 底座完成真实 RISC-V 编译/链接；均无未解析符号、无重复底座定义、无隐藏底座网络函数导入。配置中的非空网络名称/令牌字节未进入这些模块。
-- 链接证明使用合成取指地址，产物全部 **NOT DEPLOYABLE**。未部署 ABI4；下面的实机结果只属于历史 ABI3。
+- 早期合成取指地址产物仍 **NOT DEPLOYABLE**；其原始证据标为 pre-hardware baseline。随后根据真实设备地址另行构建并部署 ABI4，独立记录如下。
 - 看门狗原生测试直接编译生产实现，覆盖分角色超时、截止点拒绝续命、根角色不可关闭、陈旧 ID、大量槽复用、CRC、跨模拟复位保留、精确序号确认、新硬件事件替换旧待确认事件，以及更新/隔离启动不产生重启循环。它不等于实际芯片 WDT 和 RTC 验收。
 - hello A/B 的实际 C/ASan/UBSan 测试与 13 项 manifest/链接证明测试通过。管理客户端另有 6 项实际 localhost TCP/参数测试。
+
+### ABI4 独立实机验收（2026-11-08）
+
+- 用户授权串口刷入新底座，整片校验通过；全部 Wi-Fi 业务更新结束后，对底座启动/分区区间及完整 factory 区间再次实际校验，摘要与刷入镜像一致。
+- hello A→B 的行为、计数重置、错误令牌拒绝、正常启动拒绝覆写、半包上传+重启恢复、错误底座绑定拒绝均通过。
+- 五种真实故障：停止喂狗、通用作业迟到、入口失败、入口卡死/TWDT、关中断/IWDT；均恢复独立管理、保留 RTC 报告，精确序号确认不解除隔离。硬卡死原因/年龄未知时不伪造。
+- 修复实机发现的 **6144 字节 listener 栈溢出**：默认改为可配置 12288 字节。代表负载最小剩余量为控制口 **5940 B**、UART 口 **7184 B**。修复后再次完整 28/28 CTest、safe/enabled 构建和硬件回归通过。
+- STM 服务 SRAM 下载、全读回校验、Go、同一 Linux PTY 跨下载暂停/恢复通过。UART 长连接保持时 ESP 业务槽更新/重启，然后 Wi-Fi 重装 STM 服务，目标 SRAM 应用仍能回复 PONG。
+- SPI 在恢复服务后及活动 UART 更新/重装后分别执行三档速率，各 100 次：累计 **600×64 字节双向事务**，两端全部校验通过，零错字节。历史 ABI3 全 FF 唯一根因仍未坐实。
+- 本轮**没有改写 STM Flash**；没有实测擦写中突然断电，RTC 不保证断电保留，未验证其他板或 cache-off 自定义 ISR。GitHub 发布与远程 CI 仍暂停。
+- [独立实机报告](validation/abi4-hardware-20261108.md) / [脱敏结构化证据](validation/abi4-hardware-20261108.json)。生产凭据、镜像和原始串口/Wi-Fi 日志保持私有。
 
 ### 历史 ABI3 本地执行结果（2026-11-07）
 
@@ -60,8 +71,19 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 - Full **28/28 CTest** passed, including ROM E2E, production generic networking/supervision, watchdog, management client and hello services. No failing registered fixture was skipped to make migration pass.
 - Real ESP-IDF safe and enabled builds passed. Enabled configuration requires IWDT, TWDT panic and reboot-on-panic.
 - STM, hello A and hello B really cross-linked against the ABI4 resident, without undefined symbols, duplicate resident definitions or hidden resident network-helper imports. Nonempty configured network-name/token bytes were absent from modules.
-- All module checks use a synthetic text address: **NOT DEPLOYABLE**. ABI4 has not been flashed; hardware results below apply only to ABI3.
+- Earlier synthetic-address artifacts remain **NOT DEPLOYABLE** and are labeled pre-hardware baseline. Separate modules were subsequently rebuilt for real reserved addresses and physically deployed as recorded below.
 - Production watchdog C passed native ASan/UBSan tests for independent roles, exact deadlines, stale IDs, root protection, CRC/retention, sequence ACK and new hardware incidents. Native simulated resets do not validate real chip WDT/RTC behavior. Hello variants and 13 manifest/link-proof tests passed; six client tests exercise actual localhost TCP and argument validation.
+
+### Independent ABI4 hardware validation (2026-11-08)
+
+- Authorized serial resident deployment and whole-image verification passed. After all Wi-Fi module replacements, serial digest verification again matched the boot/partition range and full factory partition against the deployed resident image.
+- Hello A→B behavior/counter reset, invalid-token rejection, normal-boot overwrite refusal, interrupted-upload reboot recovery and mismatched-base binding rejection passed.
+- Five physical faults recovered to management/quarantine with RTC reports: missing service feed, late generic job, entry failure, entry hang/TWDT and interrupts-disabled stall/IWDT. Sequence ACK is exact and does not release quarantine; unknown hard-stall age/offender remains unknown.
+- Serial evidence identified a 6144-byte listener stack overflow. The configurable default is now 12288 bytes; measured minimum headroom was 5940 B on control and 7184 B on UART. All 28 CTest entries, both ESP profiles and hardware regressions passed again after the fix.
+- STM SRAM programming/full readback/Go, one Linux PTY across preempting SRAM download, and resident reset/module replacement while UART was active passed. The STM SRAM application still returned PONG after service reinstall.
+- Two rounds of 100 transactions at each of 100 kHz, 500 kHz and 1 MHz passed: 600 bidirectional 64-byte transactions, both receivers verified, zero mismatched bytes. This does not establish the cause of the historical ABI3 all-FF incident.
+- STM Flash was not rewritten in this session. Physical mid-write power loss, other boards, complete-power-loss RTC retention and custom cache-off ISRs remain untested. Publication and remote CI remain paused.
+- See the [hardware report](validation/abi4-hardware-20261108.md) and [sanitized JSON evidence](validation/abi4-hardware-20261108.json). Production credentials/images and raw serial/Wi-Fi logs remain private.
 
 ### Historical ABI3 local results (2026-11-07)
 

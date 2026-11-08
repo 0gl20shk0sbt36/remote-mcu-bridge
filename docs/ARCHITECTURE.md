@@ -16,7 +16,7 @@ resident: network/auth → loader → generic supervisor/WDT/recovery
 module:   module_entry(const rmb_host *) → drivers/tasks/listen → return 0
 ```
 
-This is the ABI4 design, not a claim of ABI4 hardware validation. Historical ABI3 physical results remain historical; see [Service authoring](SERVICE_AUTHORING.md).
+This is the ABI4 design. Independent [ABI4 hardware evidence](validation/abi4-hardware-20261108.md) is recorded separately from native/cross-build checks. Historical ABI3 physical results remain historical; see [Service authoring](SERVICE_AUTHORING.md).
 
 ## Public boundary
 

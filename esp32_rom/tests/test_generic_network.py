@@ -26,6 +26,10 @@ pre = r'''
 #include <unistd.h>
 #include <time.h>
 #include <sys/wait.h>
+#ifndef CONFIG_RMB_LISTENER_STACK_BYTES
+#define CONFIG_RMB_LISTENER_STACK_BYTES 12288
+#endif
+#define ESP_LOGI(...) ((void)0)
 typedef unsigned TickType_t;
 typedef void *TaskHandle_t;
 typedef int *SemaphoreHandle_t;
@@ -48,7 +52,7 @@ static void ulTaskNotifyTake(int a,unsigned b) {(void)a;(void)b;}
 static void vTaskDelay(unsigned n) {(void)n;}
 static void vTaskDelete(void *p) {(void)p;++task_deletes;}
 static void xTaskNotifyGive(void *p) {(void)p;++task_notifies;}
-static int xTaskCreate(void (*f)(void *),const char *name,unsigned stack,void *arg,unsigned priority,void **out) {(void)f;(void)name;(void)stack;(void)arg;(void)priority;if(task_fail_after==0)return 0;if(task_fail_after>0)--task_fail_after;*out=(void *)2;++task_creates;return 1;}
+static int xTaskCreate(void (*f)(void *),const char *name,unsigned stack,void *arg,unsigned priority,void **out) {(void)f;(void)name;assert(stack==CONFIG_RMB_LISTENER_STACK_BYTES);(void)arg;(void)priority;if(task_fail_after==0)return 0;if(task_fail_after>0)--task_fail_after;*out=(void *)2;++task_creates;return 1;}
 static int64_t esp_timer_get_time(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (int64_t)t.tv_sec*1000000+t.tv_nsec/1000;}
 bool module_runtime_code_pointer(const void *p) {return p!=NULL && code_allowed;}
 bool module_runtime_ready(void) {return true;}
@@ -164,5 +168,6 @@ int main(void) {
 '''
 with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', str(Path.home()/'tmp'))) as d:
     p=Path(d);(p/'network.c').write_text(pre+source+post)
-    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-fsanitize=address,undefined','-fno-pie','-no-pie','-fno-sanitize-recover=all','-I'+str(ROOT/'include'),str(p/'network.c'),'-o',str(p/'network')],check=True)
-    subprocess.run([str(p/'network')],check=True,timeout=10)
+    for stack_bytes in (12288, 16384):
+        subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-fsanitize=address,undefined','-fno-pie','-no-pie','-fno-sanitize-recover=all',f'-DCONFIG_RMB_LISTENER_STACK_BYTES={stack_bytes}','-I'+str(ROOT/'include'),str(p/'network.c'),'-o',str(p/'network')],check=True)
+        subprocess.run([str(p/'network')],check=True,timeout=10)

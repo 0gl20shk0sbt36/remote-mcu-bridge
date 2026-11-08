@@ -1,5 +1,7 @@
 /* Base-owned, protocol-neutral authenticated TCP listeners (ABI4). */
 #include "generic_network.h"
+#include "sdkconfig.h"
+#include "esp_log.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -260,6 +262,10 @@ static void listener_worker(void *arg) {
             rmb_connection h=(rmb_connection)(s->generation*LISTENERS+(unsigned)(s-slots)+1);
             xSemaphoreGive(s->lock);
             s->handler(h,s->context);
+            /* ESP-IDF reports the minimum unused stack in BYTES. Include the
+             * complete service/driver/libc call chain, not just its C frame. */
+            ESP_LOGI("rmb-net","port=%u stack_min_free_bytes=%u",
+                     (unsigned)s->port,(unsigned)uxTaskGetStackHighWaterMark(NULL));
             /* Synchronous supervised jobs are complete before callback returns. */
             xSemaphoreTake(s->lock,portMAX_DELAY);
             s->active=false; close(fd); s->fd=-1;
@@ -313,7 +319,7 @@ bool rmb_network_init_commit(void) {
     if(atomic_load(&phase)!=INIT || xTaskGetCurrentTaskHandle()!=init_task) return false;
     if(registration_failed) {rmb_network_init_abort();return false;}
     for(unsigned i=0;i<listener_count;++i) {
-        if(xTaskCreate(listener_worker,"rmb-listener",6144,&slots[i],5,&slots[i].task)!=pdPASS) {
+        if(xTaskCreate(listener_worker,"rmb-listener",CONFIG_RMB_LISTENER_STACK_BYTES,&slots[i],5,&slots[i].task)!=pdPASS) {
             rmb_network_init_abort(); return false;
         }
     }

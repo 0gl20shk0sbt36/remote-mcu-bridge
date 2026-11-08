@@ -1,6 +1,6 @@
 # ESP porting guide — ABI 4
 
-This guide applies the [architecture](ARCHITECTURE.md) and [base/platform boundary](BASE_PLATFORM_BOUNDARY.md) to ESP-IDF. It is a migration/verification checklist, not an assertion that ABI4 has passed physical hardware tests. Older guides describing module_ops or numbered dispatch document ABI3 interfaces and are not the ABI4 service SDK.
+This guide applies the [architecture](ARCHITECTURE.md) and [base/platform boundary](BASE_PLATFORM_BOUNDARY.md) to ESP-IDF. It is a migration/verification checklist; the exact fixed-board ABI4 results and limits are in the independent [hardware report](validation/abi4-hardware-20261108.md), not a promise for other ports. Older guides describing module_ops or numbered dispatch document ABI3 interfaces and are not the ABI4 service SDK.
 
 ## 1. Separate base from target service
 
@@ -48,4 +48,4 @@ Use a local ESP-IDF 5.5.5 tree and its matching compiler/Python environment. Set
 | ESP cross-build | disabled and placeholder-enabled build output; exact ELF binding/import/section checks; hello A/B and STM builds | hardware deployment or target ROM behavior |
 | Physical ABI4 (separately authorized) | Wi-Fi update/reboot, real WDT recovery, module storage faults, STM UART/SPI/pins and target behavior | never inferred from native tests or ABI3 history |
 
-Record pass/fail/not-run and actual commands/environment in verification reports. Do not invent pass counts or claim hardware just because the linker or native mocks succeeded. This documentation edit performs no build or hardware action. Historical ABI3 A→B/restore and SPI observations remain unchanged evidence for that earlier version only; [Service authoring](SERVICE_AUTHORING.md) labels them explicitly. ABI4 hardware verification is not claimed.
+Record pass/fail/not-run and actual commands/environment in verification reports. Do not invent pass counts or claim hardware just because the linker or native mocks succeeded. Historical ABI3 A→B/restore and SPI observations remain unchanged evidence for that earlier version only; [Service authoring](SERVICE_AUTHORING.md) labels them explicitly. New ABI4 results are recorded separately. Budget the complete callback/SDK/libc stack: the configurable listener default is 12288 bytes, and actual low-water measurements are required for representative workloads.
