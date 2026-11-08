@@ -2,6 +2,7 @@
 
 ## 中文
 
+
 ### 1. 四类镜像不能混用
 
 | 对象 | 运行/存放位置 | 管理方式 |
@@ -95,6 +96,14 @@ python3 esp32_rom/module/build_module.py --base-elf "$BASE_ELF" \
 ```
 
 每次输出目录保存镜像及 `module-link/` 中的 ELF、map、命令、relocations、proof.json。先运行 `sh examples/services/hello/test.sh` 和原生测试；无硬件 synthetic compilecheck 产物明确不可部署。修改底座的监听栈等配置也必须重建绑定。
+
+### 7. 服务与底座的依赖边界
+
+- 服务只拿到 `rmb_host` 函数表（`net`、`now_us`、`progress`、`run`、`watchdog_open/feed/close`），**不链接任何 `rmb_*` 底座符号**；网络只用 `net->listen/read/write/exact/authenticated`。
+- 但服务与底座**共享同一套 IDF/FreeRTOS/libc/cJSON 运行时**：不是沙箱。因此底座任何变化（固件、SDK、监听栈等编译期配置、地址布局）都必须重新构建并上传服务；旧服务装进新底座会被绑定哈希拒绝。
+- 构建服务必须用**设备 `status` 上报的** `text_address`/`data_address` 与正在运行的底座 ELF；写错地址会被准入拦下（实测如此）。
+- 板卡是数据：`boards/*/board.json` 的引脚/型号必须与编译出的 `sdkconfig` 一致，构建驱动会逐根校验；换板卡只需新增 JSON。
+- 度量脚本：`python3 tools/analyze_dependencies.py --proof <service>/module-link/proof.json`。
 
 ### 6. 远程安装/替换服务
 
@@ -215,6 +224,14 @@ python3 esp32_rom/module/build_module.py --base-elf "$BASE_ELF" \
 ```
 
 Use separate output directories and retain image plus module-link ELF/map/commands/relocations/proof. Run `sh examples/services/hello/test.sh` and native tests. Synthetic compilecheck output is **not deployable**. Resident stack/layout changes require a newly bound service.
+
+### 7. Dependency boundary between service and resident
+
+- A service receives only the `rmb_host` table (`net`, `now_us`, `progress`, `run`, `watchdog_open/feed/close`) and imports **no `rmb_*` base symbols**; networking goes through `net->listen/read/write/exact/authenticated`.
+- The service still **shares the resident's IDF/FreeRTOS/libc/cJSON runtime**: this is not a sandbox. Any resident change (firmware, SDK, compile-time settings such as the listener stack, address layout) requires rebuilding and re-uploading the service; an old service is rejected by the binding hash.
+- Build against the `text_address`/`data_address` **reported by the device** and the exact resident ELF that is running; a wrong address is rejected by admission (observed on hardware).
+- Boards are data: the pins/device in `boards/*/board.json` must match the compiled `sdkconfig`, which the driver verifies pin by pin; adding a board is a JSON change.
+- Metrics: `python3 tools/analyze_dependencies.py --proof <service>/module-link/proof.json`.
 
 ### 6. Install or replace over the network
 

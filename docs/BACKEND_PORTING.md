@@ -49,7 +49,7 @@
 ### 4. 平台职责与当前 ESP 文件
 
 - `bridge_lifecycle_ops` 声明 `monotonic_us`、`watchdog_feed` 和 `reset`。它不是完整调度器，也不证明当前服务已全部通过该表调用生命周期功能。
-- `esp32_rom/main/service.c` 和同目录 `*.inc` 仍包含网络、监督及流服务的 ESP-IDF 实现；不要把现有全部协议解析宣称为已移出的可移植核心。
+- `esp32_rom/main/` 的可移植部分（`resident.c`、`generic_network.c`、`module_runtime.c`、各 `.inc`）只经 `include/rmb/port.h` 访问平台；平台实现集中在 `esp32_rom/main/platform/`。判据是 `esp32_rom/tests/test_port_boundary.py`，不要凭感觉宣称"已可移植"。
 - `esp32_rom/main/module_runtime.c` / `.h` 处理当前 ESP 模块的分区、映射、加载和更新衔接；`module_runtime_prepare` 是非执行预留，`module_runtime_init` 会执行入口，只能从监督工作路径调用，不能从上传提交路径调用。
 - `esp32_rom/main/module_abi.h` 定义 `module_header`、`module_host`、`module_ops` 与镜像 ABI。`esp32_rom/module/build_module.py` 与准确底座构建绑定模块；二进制不保证跨 CPU、SDK、ABI 或底座构建复用。
 - `esp32_rom/module/entry.c`、`business.c` 是业务模块；`module/logic/spi_diagnostic.c` 是诊断流程；`module/platform/esp_idf_io.c` / `.h` 与 `board_config.h` 才是其 ESP UART/GPIO/SPI 适配及板级配置。
@@ -133,7 +133,7 @@ For encrypted Flash, verify logical read values, programming alignment, repeated
 ### 4. Platform responsibilities and current ESP files
 
 - `bridge_lifecycle_ops` declares `monotonic_us`, `watchdog_feed`, and `reset`. It is not a complete scheduler or proof that all current service lifecycle calls use this table.
-- `esp32_rom/main/service.c` and sibling `*.inc` still contain ESP-IDF networking, supervision, and streams. Do not describe all existing protocol parsing as extracted portable core.
+- The portable part of `esp32_rom/main/` (`resident.c`, `generic_network.c`, `module_runtime.c`, the `.inc` units) reaches the platform only through `include/rmb/port.h`; platform code is confined to `esp32_rom/main/platform/`. The criterion is `esp32_rom/tests/test_port_boundary.py`, not intuition.
 - `esp32_rom/main/module_runtime.c` / `.h` integrate ESP partition storage, mapping, loading, and updates. `module_runtime_prepare` reserves resources without execution; `module_runtime_init` executes entry and belongs only in the supervised worker, never upload commit.
 - `esp32_rom/main/module_abi.h` defines `module_header`, `module_host`, `module_ops`, and the image ABI. `esp32_rom/module/build_module.py` binds modules to an exact base build. Binaries are not portable across CPUs, SDKs, ABIs, or base builds.
 - `esp32_rom/module/entry.c` and `business.c` implement the business module; `module/logic/spi_diagnostic.c` implements the workflow; `module/platform/esp_idf_io.c` / `.h` and `board_config.h` provide its ESP UART/GPIO/SPI adapter and board configuration.

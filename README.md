@@ -67,7 +67,8 @@ python3 tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103
 | `rom/fake_rom.c`、`rom/native_bridge.c`、`rom/test_rom.c` | 原生模拟器、主机桥与协议单元测试 |
 | `backends/esp-idf/backend.json` | 唯一实际部署后端的注册信息 |
 | `boards/esp32c3-stm32f103/board.json` | 板卡选择及其后端关联 |
-| `esp32_rom/main/service.c`、`*.inc` | ESP-IDF 管理服务、流与监督逻辑 |
+| `esp32_rom/main/resident.c`、`*.inc` | 平台无关的管理协议、日志环、监督与看门狗逻辑 |
+| `esp32_rom/main/platform/` | 唯一的平台实现：ESP-IDF 端口、Wi-Fi/发现、入口 |
 | `esp32_rom/main/module_runtime.c`、`module_runtime.h` | ESP 模块存储/加载与更新适配 |
 | `include/rmb/service.h`、`esp32_rom/main/module_abi.h` | 通用服务 SDK 与平台镜像头，不引入 ROM API |
 | `esp32_rom/module/entry.c`、`business.c` | 可替换业务模块入口与业务 |
@@ -167,7 +168,8 @@ Single-slot updates invalidate the commit marker first. Write permission is latc
 | `rom/fake_rom.c`, `rom/native_bridge.c`, `rom/test_rom.c` | Native simulator, host bridge, and protocol unit tests |
 | `backends/esp-idf/backend.json` | Registry for the only implemented deployment backend |
 | `boards/esp32c3-stm32f103/board.json` | Board selection and backend association |
-| `esp32_rom/main/service.c`, `*.inc` | ESP-IDF management service, streams, and supervision |
+| `esp32_rom/main/resident.c`, `*.inc` | Platform-free management protocol, log ring, supervision and watchdog |
+| `esp32_rom/main/platform/` | The only platform implementation: ESP-IDF port, Wi-Fi/discovery, entry |
 | `esp32_rom/main/module_runtime.c`, `module_runtime.h` | ESP module storage/loading and update integration |
 | `esp32_rom/main/module_abi.h` | Image header, ABI, and host/module function tables |
 | `esp32_rom/module/entry.c`, `business.c` | Replaceable business module entry and implementation |

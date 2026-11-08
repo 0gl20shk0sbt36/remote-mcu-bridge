@@ -13,15 +13,25 @@
 | `include/rmb/service.h` | 服务 ABI：认证网络、单调时钟、受监督作业、角色租约；不含 STM/ESP 类型 |
 | `include/rmb/update.h`、`core/update.c` | 无 SDK 的单槽提交状态机、几何与写入准入 |
 | `include/rmb/supervisor.h`、`core/supervisor.c` | 可移植监督规则 |
-| `esp32_rom/main/service.c`、`supervisor.inc`、`service_watchdog.inc` | Wi-Fi、管理协议、日志、监督任务与故障保留 |
-| `esp32_rom/main/generic_network.c` | 认证、借用 handle、监听 worker、初始化 gate |
-| `esp32_rom/main/module_runtime.c`、`module_abi.h` | 分区、XIP 映射、32 KiB 数据预留、镜像准入和精确 ELF 绑定 |
+| `esp32_rom/main/resident.c`、`supervisor.inc`、`service_watchdog.inc` | 管理协议、日志、监督任务与故障保留（平台无关） |
+| `esp32_rom/main/generic_network.c` | 认证、借用 handle、监听 worker、初始化 gate（平台无关） |
+| `include/rmb/port.h` | 平台契约：46 个函数（时间/日志/复位/临界区/任务/同步/看门狗/保留内存/业务槽/映射/身份/网络） |
+| `esp32_rom/main/platform/` | 唯一的平台实现目录：`esp_idf_port.c`、`net_esp_idf.c`（Wi-Fi/NVS/发现）、`entry_esp_idf.c` |
+| `esp32_rom/main/module_runtime.c`、`module_abi.h` | 镜像准入、精确 ELF 绑定与 32 KiB 数据窗口；存储/映射调用端口层（平台无关） |
 | `esp32_rom/module/entry.c`、`business.c` | 默认 STM 服务的入口和业务；ROM 操作不应返回底座 |
 | `rom/rom.h`、`rom/rom.c`、`rom/devices.c` | 可移植目标 ROM 算法、I/O 契约和几何 |
 | `esp32_rom/module/platform/` | 服务自有 UART/GPIO、可选 SPI 与板级定义 |
 | `examples/services/hello/` | 无 ROM、无 UART/SPI 的独立 A/B 服务样例 |
 | `backends/`、`boards/`、`schemas/`、`tools/rmb.py` | 注册表验证与 SDK 构建入口，不提供自动烧写 |
 | `tools/module_ctl.py` / `romctl.py` / `wifidebug.py` | 底座管理 / STM ROM / 日志和应用 UART，各有不同协议 |
+
+### 2.5 平台抽象、依赖度量与板卡注册表
+
+- **边界**：底座平台无关部分只依赖 `include/rmb/port.h` 的 46 个函数；平台实现全部在 `esp32_rom/main/platform/`。`esp32_rom/tests/test_port_boundary.py` 强制两点：可移植文件不得出现平台标识符、契约函数必须有实现。改底座前先跑它。
+- **服务侧**：服务只拿到 `rmb_host` 函数表（`net`、`now_us`、`progress`、`run`、`watchdog_*`），**不链接任何 `rmb_*` 底座符号**；它与底座共享 IDF/RTOS/libc 运行时，因此底座一变（含监听栈大小等编译期配置）所有服务必须重建。
+- **度量**：`python3 tools/analyze_dependencies.py` 输出各目录的平台引用密度；加 `--proof <service>/module-link/proof.json` 可得到该服务实际导入的底座符号分类。当前实测：服务导入的私有 API 符号 0 个，底座平台代码 443 行且只在一个目录。
+- **板卡是数据**：`boards/*/board.json` 描述目标、型号与引脚，后端用 `supported_targets` 声明支持范围；新增板卡只加 JSON。安全性由"描述必须等于编译出的镜像"保证——`verify_board_wiring()` 在配置后逐根比对 `CONFIG_ROM_SERVICE_*`，不一致直接失败。
+- 详见 [底座平台移植](RESIDENT_PLATFORM.md) 与 [依赖与平台耦合分析](DEPENDENCY_ANALYSIS.md)。
 
 ### 2. 可复现开发环境
 
@@ -115,15 +125,25 @@ Read [User guide](USER_GUIDE.md), [Service SDK contract](SERVICE_AUTHORING.md), 
 | `include/rmb/service.h` | Generic service ABI; no STM/ESP types |
 | `include/rmb/update.h`, `core/update.c` | SDK-independent single-slot update and admission |
 | `include/rmb/supervisor.h`, `core/supervisor.c` | Portable supervision policy |
-| `esp32_rom/main/service.c`, `supervisor.inc`, `service_watchdog.inc` | Wi-Fi, management, logs, fault retention and tasks |
-| `esp32_rom/main/generic_network.c` | Authentication, borrowed handles, listener workers, init gate |
-| `esp32_rom/main/module_runtime.c`, `module_abi.h` | Partitions, XIP, 32 KiB data reserve, exact ELF binding |
+| `esp32_rom/main/resident.c`, `supervisor.inc`, `service_watchdog.inc` | Management protocol, logs, supervision and fault retention (platform-free) |
+| `esp32_rom/main/generic_network.c` | Authentication, borrowed handles, listener workers, init gate (platform-free) |
+| `include/rmb/port.h` | Platform contract: 46 functions (time, log, reset, critical section, tasks, sync, watchdog, retained RAM, slot, mapping, identity, network) |
+| `esp32_rom/main/platform/` | The only platform implementation directory: `esp_idf_port.c`, `net_esp_idf.c` (Wi-Fi/NVS/discovery), `entry_esp_idf.c` |
+| `esp32_rom/main/module_runtime.c`, `module_abi.h` | Admission, exact ELF binding and the 32 KiB data window; storage/mapping go through the port (platform-free) |
 | `esp32_rom/module/entry.c`, `business.c` | STM service entry and business; never move ROM operations into the resident |
 | `rom/` | Portable ROM protocol, I/O contracts, geometry and native simulation |
 | `esp32_rom/module/platform/` | Service-owned UART/GPIO and optional SPI |
 | `examples/services/hello/` | Independent A/B service without ROM or peripheral drivers |
 | `backends/`, `boards/`, `schemas/`, `tools/rmb.py` | Registry validation and builds, not automatic flashing |
 | `tools/module_ctl.py`, `romctl.py`, `wifidebug.py` | Resident management, target ROM, logs/application UART |
+
+### 2.5 Platform abstraction, dependency metrics and the board registry
+
+- **Boundary**: the platform-free half of the resident depends only on the 46 functions in `include/rmb/port.h`; every platform implementation lives in `esp32_rom/main/platform/`. `esp32_rom/tests/test_port_boundary.py` enforces both directions: no platform identifier may appear in a portable file, and every contract function must have an implementation. Run it before touching the resident.
+- **Service side**: a service receives only the `rmb_host` table (`net`, `now_us`, `progress`, `run`, `watchdog_*`) and imports **no `rmb_*` base symbols**; it shares the IDF/RTOS/libc runtime, so any resident change (including compile-time settings such as the listener stack size) requires rebuilding every service.
+- **Metrics**: `python3 tools/analyze_dependencies.py` prints platform-reference density per area; adding `--proof <service>/module-link/proof.json` classifies the symbols a service really imports. Measured today: zero base-private API symbols, and only 443 lines of platform code in the resident, all in one directory.
+- **Boards are data**: `boards/*/board.json` describes target, device and pins; the backend declares `supported_targets`, so a new board is a JSON file. Safety comes from "the descriptor must equal the compiled image" — `verify_board_wiring()` compares every `CONFIG_ROM_SERVICE_*` pin after configure and fails on mismatch.
+- See [Resident platform porting](RESIDENT_PLATFORM.md) and [Dependency and platform coupling](DEPENDENCY_ANALYSIS.md).
 
 ### 2. Reproducible environment
 

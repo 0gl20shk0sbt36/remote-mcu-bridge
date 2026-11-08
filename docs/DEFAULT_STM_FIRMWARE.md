@@ -1,6 +1,6 @@
 # 默认 STM ROM/UART 服务手册 / Default STM ROM and UART service
 
-## 中文
+
 
 ### 1. “默认固件”的准确含义
 
@@ -121,6 +121,13 @@ python3 tools/wifidebug.py --host "$DEVICE_IP" --token-file "$TOKEN_FILE" logs -
 
 ---
 
+### 9. 默认服务与底座的关系
+
+- 默认服务只通过 `rmb_host` 与底座交互，不链接任何 `rmb_*` 底座符号；但它运行在底座的 IDF/FreeRTOS/libc 运行时里，**不是沙箱**。
+- 因此：底板固件、SDK、监听栈等编译期配置或地址布局一变，默认服务必须用新底座 ELF + 设备 `status` 上报的地址重建后再上传；旧镜像会被绑定哈希拒绝。
+- 安装流程与自定义服务相同：`module_ctl.py enter-update`（空槽开机已处于更新模式）→ `upload` → `restart`。
+- 未安装服务时，底板只有管理/日志/发现可用；`romctl` 的 STM 命令会因 3333 无监听而失败，这是预期行为。
+
 ## English
 
 ### 1. What “default firmware” means
@@ -230,3 +237,11 @@ Interactive UART defaults to 115200 8N1. --send transmits exact UTF-8 text witho
 ### 8. SPI is optional, not default
 
 Only if diagnostics are explicitly required, build into a separate output directory with `--builtin-service stm-spi` and install through the normal service update flow. This also requires [optional wiring](WIRING.md), a matching STM SPI slave application and UART handshakes. A complete buildable STM slave project is not promised. Historical reports are not a bundled default image and past successes do not eliminate intermittent all-FF faults; see [SPI investigation](SPI_INVESTIGATION.md).
+
+### 9. How the default service relates to the resident
+
+- The default service talks to the resident only through `rmb_host` and imports no `rmb_*` base symbols, but it runs inside the resident's IDF/FreeRTOS/libc runtime: **not a sandbox**.
+- Therefore any change to the resident firmware, SDK, compile-time settings (for example the listener stack) or address layout requires rebuilding the service against the new base ELF plus the device-reported addresses, then re-uploading; an old image is rejected by the binding hash.
+- Installation is the same flow as any service: `module_ctl.py enter-update` (a blank slot already boots in update mode) -> `upload` -> `restart`.
+- Without an installed service the resident only offers management/logs/discovery; `romctl` STM commands fail because nothing listens on 3333, which is expected.
+
