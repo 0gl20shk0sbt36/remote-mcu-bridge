@@ -47,6 +47,7 @@ typedef struct {uint8_t app_elf_sha256[32];} esp_app_desc_t;
 PRE = r"""
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
+#include "port_native.h"
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -65,41 +66,24 @@ PRE = r"""
 #include "esp_partition.h"
 #include "esp_app_desc.h"
 #define CONFIG_RMB_TOKEN "native-supervisor-test-token"
-#define ESP_LOGE(...) ((void)0)
 #define ESP_ERROR_CHECK(x) assert((x)==0)
 #define HEADER_US 100000LL
 #define UPLOAD_US 100000LL
 #define REQUEST_MAX 1024
-#define pdTRUE 1
-#define pdMS_TO_TICKS(x) (x)
-#define portMAX_DELAY -1
 #define portMUX_TYPE pthread_mutex_t
 #define portMUX_INITIALIZER_UNLOCKED PTHREAD_MUTEX_INITIALIZER
 #define portENTER_CRITICAL(x) pthread_mutex_lock(x)
 #define portEXIT_CRITICAL(x) pthread_mutex_unlock(x)
-typedef int TaskHandle_t;
-typedef int QueueHandle_t;
 typedef struct {pthread_mutex_t lock;pthread_cond_t changed;bool set;} native_sem;
-typedef native_sem *SemaphoreHandle_t;
 static pthread_mutex_t qlock=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t changed=PTHREAD_COND_INITIALIZER;
 static void *queued;
 static bool reject_queue,entered,hang_entry;
 static atomic_int feeds;
 static _Thread_local int current_task;
-static int xTaskGetCurrentTaskHandle(void) {return current_task;}
-static int64_t esp_timer_get_time(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (int64_t)t.tv_sec*1000000+t.tv_nsec/1000;}
-static int esp_task_wdt_add(void *p) {(void)p;return 0;}
-static int esp_task_wdt_reset(void) {atomic_fetch_add(&feeds,1);return 0;}
-static void vTaskDelay(int n) {assert(n==100); /* Native restart returns to verify ordering. */}
-static int esp_reset_reason(void) {return 0;}
 static int restarted,sequence,invalidated_at,restarted_at;
-static void esp_restart(void) {restarted++;restarted_at=++sequence;}
-static SemaphoreHandle_t xSemaphoreCreateBinary(void) {
  native_sem *s=calloc(1,sizeof *s);assert(s);assert(!pthread_mutex_init(&s->lock,NULL));assert(!pthread_cond_init(&s->changed,NULL));return s;
 }
-static void xSemaphoreGive(native_sem *s) {pthread_mutex_lock(&s->lock);s->set=true;pthread_cond_signal(&s->changed);pthread_mutex_unlock(&s->lock);}
-static void xSemaphoreTake(native_sem *s,int ticks) {assert(ticks==portMAX_DELAY);pthread_mutex_lock(&s->lock);while(!s->set)pthread_cond_wait(&s->changed,&s->lock);pthread_mutex_unlock(&s->lock);}
 static void vSemaphoreDelete(native_sem *s) {pthread_mutex_destroy(&s->lock);pthread_cond_destroy(&s->changed);free(s);}
 static unsigned char flash[0x100000];
 static const esp_partition_t partition={sizeof flash,0x220000};
@@ -134,12 +118,10 @@ void module_host_configure(rmb_host *h) {(void)h;}
 """
 
 QUEUE = r"""
-static int xQueueSend(int q,supervisor_job **p,int ticks) {
  (void)q;(void)ticks;pthread_mutex_lock(&qlock);
  if(queued||reject_queue){pthread_mutex_unlock(&qlock);return 0;}
  queued=*p;pthread_cond_broadcast(&changed);pthread_mutex_unlock(&qlock);return pdTRUE;
 }
-static int xQueueReceive(int q,supervisor_job **p,int ticks) {
  (void)q;(void)ticks;pthread_mutex_lock(&qlock);
  while(!queued)pthread_cond_wait(&changed,&qlock);
  *p=queued;queued=NULL;pthread_mutex_unlock(&qlock);return pdTRUE;
@@ -176,7 +158,7 @@ def build_run(post):
     cj = cjson()
     mbed = Path(os.environ["IDF_PATH"]) / "components/mbedtls/mbedtls"
     source = (ROOT / "main/supervisor.inc").read_text()
-    service = (ROOT / "main/service.c").read_text()
+    service = (ROOT / "main/resident.c").read_text()
     runtime = (ROOT / "main/module_runtime.c").read_text()
     # Native CPUs cannot execute RISC-V fence.i or the uploaded entry address.
     fence = '__asm__ volatile("fence.i" ::: "memory")'
@@ -229,10 +211,16 @@ def build_run(post):
                 "-fsanitize=undefined",
                 '-DMBEDTLS_CONFIG_FILE="native_mbedtls_config.h"',
                 "-I" + str(mbed / "include"),
+                "-I" + str(ROOT / "tests"),
+                "-I" + str(ROOT / "esp32_rom" / "tests"),
+                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 "-fno-sanitize-recover=all",
                 "-I" + str(p),
                 "-I" + str(cj),
                 "-I" + str(ROOT / "main"),
+                "-I" + str(ROOT / "tests"),
+                "-I" + str(ROOT / "esp32_rom" / "tests"),
+                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 "-I" + str(ROOT.parent / "include"),
                 str(p / "native.c"),
                 str(ROOT.parent / "core/update.c"),
@@ -241,6 +229,7 @@ def build_run(post):
                 str(mbed / "library/sha256.c"),
                 str(mbed / "library/platform_util.c"),
                 "-lm",
+                str(ROOT / "esp32_rom" / "tests" / "port_native_impl.c"),
                 "-o",
                 str(p / "native"),
             ],

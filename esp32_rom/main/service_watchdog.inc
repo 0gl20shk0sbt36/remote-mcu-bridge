@@ -4,7 +4,7 @@
 #define SERVICE_LEASES 8
 #define SERVICE_FAULT_MAGIC 0x57444c35u
 #define SERVICE_UNKNOWN UINT32_MAX
-static portMUX_TYPE lease_lock = portMUX_INITIALIZER_UNLOCKED;
+static rmb_lock_t lease_lock = RMB_LOCK_INIT;
 typedef struct {
     int id;
     bool root, active;
@@ -30,7 +30,7 @@ typedef struct {
     service_fault_record breadcrumb;
     uint32_t crc;
 } service_watchdog_journal;
-static RTC_NOINIT_ATTR service_watchdog_journal lease_rtc;
+static RMB_RETAINED service_watchdog_journal lease_rtc;
 static uint32_t lease_boot;
 /* CRC covers all retained bytes before crc to detect retention corruption;
  * it proves neither freshness/authenticity nor transactional RTC persistence. */
@@ -57,13 +57,13 @@ static uint32_t lease_new_sequence(void) {
         ++lease_rtc.sequence;
     return lease_rtc.sequence;
 }
-static bool lease_hardware_reset(uint32_t reason) {
-    return reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT || reason == ESP_RST_WDT ||
-           reason == ESP_RST_PANIC;
+static bool lease_hardware_reset(rmb_reset_reason reason) {
+    return reason == RMB_RST_TASK_WATCHDOG || reason == RMB_RST_INTERRUPT_WATCHDOG ||
+           reason == RMB_RST_PANIC;
 }
 static void service_watchdog_boot(void) {
     bool valid = lease_record_valid();
-    uint32_t reset = (uint32_t)esp_reset_reason();
+    uint32_t reset = (uint32_t)rmb_port_reset_reason();
     if (!valid)
         memset(&lease_rtc, 0, sizeof lease_rtc);
     uint32_t previous_boot = lease_rtc.boot, previous_reset = lease_rtc.current_reset;
@@ -110,18 +110,18 @@ static void service_watchdog_boot(void) {
 }
 static bool service_watchdog_begin_init(void) {
     bool ok = false;
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     if (!lease_attempted && !lease_rtc.fault.reason) {
         lease_attempted = true;
         lease_enabled = true;
         lease_initializing = true;
         ok = true;
     }
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
     return ok;
 }
 static void service_watchdog_abort_init(void) {
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     lease_enabled = false;
     lease_initializing = false;
     lease_attempted = true;
@@ -131,12 +131,12 @@ static void service_watchdog_abort_init(void) {
     memset(&lease_rtc.breadcrumb, 0, sizeof lease_rtc.breadcrumb);
     lease_rtc.breadcrumb.last_feed_unknown = 1;
     lease_record_commit();
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
 }
 static void service_watchdog_finish_init(void) {
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     lease_initializing = false;
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
 }
 /* Equality expires a lease; a late feed/close cannot hide a missed deadline.
  * A backwards clock is fail-closed here, unlike the supervisor job helper. */
@@ -144,7 +144,7 @@ static bool lease_overdue(const service_lease *l, int64_t now) {
     return now < l->last || now - l->last >= (int64_t)l->timeout_ms * 1000;
 }
 static int service_watchdog_open(const char *role, uint32_t timeout_ms) {
-    if (xPortInIsrContext() || !role || timeout_ms < 1000 || timeout_ms > 60000 ||
+    if (rmb_port_in_isr() || !role || timeout_ms < 1000 || timeout_ms > 60000 ||
         strnlen(role, 24) >= 24 || !role[0])
         return -1;
     /* Restrict role bytes so diagnostic JSON never contains unescaped input. */
@@ -153,7 +153,7 @@ static int service_watchdog_open(const char *role, uint32_t timeout_ms) {
               *p == '_' || *p == '-' || *p == '.' || *p == ':'))
             return -1;
     int result = -1;
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     if (lease_enabled && (lease_initializing || lease_root_created) && lease_next < INT32_MAX)
         for (unsigned i = 0; i < SERVICE_LEASES; i++)
             if (!leases[i].active) {
@@ -164,26 +164,26 @@ static int service_watchdog_open(const char *role, uint32_t timeout_ms) {
                                      .active = true,
                                      .root = !lease_root_created && lease_initializing,
                                      .timeout_ms = timeout_ms,
-                                     .last = esp_timer_get_time()};
+                                     .last = rmb_port_now_us()};
                 memcpy(l->role, role, strlen(role) + 1);
                 if (l->root)
                     lease_root_created = true;
                 result = l->id;
                 break;
             }
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
     return result;
 }
 static int service_watchdog_feed(int id, uint32_t checkpoint) {
-    if (xPortInIsrContext())
+    if (rmb_port_in_isr())
         return -1;
     int result = -1;
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     if (lease_enabled)
         for (unsigned i = 0; i < SERVICE_LEASES; i++)
             if (leases[i].active && leases[i].id == id) {
                 service_lease *l = &leases[i];
-                int64_t now = esp_timer_get_time();
+                int64_t now = rmb_port_now_us();
                 if (!lease_overdue(l, now)) {
                     l->last = now;
                     l->checkpoint = checkpoint;
@@ -197,39 +197,39 @@ static int service_watchdog_feed(int id, uint32_t checkpoint) {
                 }
                 break;
             }
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
     return result;
 }
 static int service_watchdog_close(int id) {
-    if (xPortInIsrContext())
+    if (rmb_port_in_isr())
         return -1;
     int result = -1;
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     if (lease_enabled)
         for (unsigned i = 0; i < SERVICE_LEASES; i++)
             if (leases[i].active && leases[i].id == id && !leases[i].root &&
-                !lease_overdue(&leases[i], esp_timer_get_time())) {
+                !lease_overdue(&leases[i], rmb_port_now_us())) {
                 leases[i].active = false;
                 result = 0;
                 break;
             }
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
     return result;
 }
 bool module_watchdog_configured(void) {
     bool ok = false;
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     if (lease_enabled)
         for (unsigned i = 0; i < SERVICE_LEASES; i++)
             ok |= leases[i].active && leases[i].root &&
-                  !lease_overdue(&leases[i], esp_timer_get_time());
-    portEXIT_CRITICAL(&lease_lock);
+                  !lease_overdue(&leases[i], rmb_port_now_us());
+    rmb_port_lock_exit(&lease_lock);
     return ok;
 }
 static void service_watchdog_poll(void) {
     bool expired = false;
-    portENTER_CRITICAL(&lease_lock);
-    int64_t now = esp_timer_get_time();
+    rmb_port_lock_enter(&lease_lock);
+    int64_t now = rmb_port_now_us();
     if (lease_enabled)
         for (unsigned i = 0; i < SERVICE_LEASES; i++)
             if (leases[i].active && lease_overdue(&leases[i], now)) {
@@ -253,14 +253,14 @@ static void service_watchdog_poll(void) {
                 expired = true;
                 break;
             }
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
     if (expired)
-        esp_restart();
+        rmb_port_restart();
 }
 /* Generic entry/job faults share the exact same sticky sequence journal. */
 static void service_supervisor_fault(uint32_t reason, bool entry, uint32_t checkpoint,
                                      int64_t began, int64_t progress, int64_t limit, int64_t now) {
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     /* Worker completion and monitor can observe the same incident. First capture
      * in this boot wins until reset; never create two ACK sequences for it. */
     if (!(lease_rtc.fault.reason && lease_rtc.fault.boot == lease_boot &&
@@ -285,14 +285,14 @@ static void service_supervisor_fault(uint32_t reason, bool entry, uint32_t check
         lease_record_commit();
     }
     lease_enabled = false;
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
 }
 static void service_fault_status(int fd) {
     char out[768];
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     service_fault_record r = lease_rtc.fault;
     uint32_t current_boot = lease_rtc.boot, current_reset = lease_rtc.current_reset;
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
     snprintf(out, sizeof out,
              "{\"ok\":true,\"seq\":%lu,\"reason\":%lu,\"lease\":%lu,\"role\":\"%s\",\"checkpoint\":"
              "%lu,\"last_feed_us\":%lld,\"last_feed_unknown\":%s,\"timeout_ms\":%lu,\"age_ms\":%lu,"
@@ -309,15 +309,15 @@ static void service_fault_status(int fd) {
 }
 static bool service_fault_pending(void) {
     bool pending;
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     pending = lease_record_valid() && lease_rtc.fault.reason != 0;
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
     return pending;
 }
 /* ACK consumes one exact report sequence, not the supervisor quarantine latch. */
 static bool service_fault_ack(uint32_t seq) {
     bool ok = false;
-    portENTER_CRITICAL(&lease_lock);
+    rmb_port_lock_enter(&lease_lock);
     if (lease_record_valid() && lease_rtc.fault.reason && seq && seq != UINT32_MAX &&
         lease_rtc.fault.seq == seq) {
         memset(&lease_rtc.fault, 0, sizeof lease_rtc.fault);
@@ -325,6 +325,6 @@ static bool service_fault_ack(uint32_t seq) {
         ok = true;
     }
     /* Deliberately does not enable leases or change quarantine/entry permission. */
-    portEXIT_CRITICAL(&lease_lock);
+    rmb_port_lock_exit(&lease_lock);
     return ok;
 }

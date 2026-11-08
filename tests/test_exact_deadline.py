@@ -47,7 +47,7 @@ static void *timed_copy(void *d,const void *s,size_t n) {
 #define send timed_send
 #define memcpy timed_copy
 """
-base = (ROOT / "esp32_rom/main/service.c").read_text()
+base = (ROOT / "esp32_rom/main/resident.c").read_text()
 base = base[base.index("bool socket_exact(") : base.index("bool reply(")]
 network = (ROOT / "esp32_rom/main/generic_network.c").read_text()
 network = "\n".join(line for line in network.splitlines() if not line.startswith("#include"))
@@ -130,7 +130,11 @@ with tempfile.TemporaryDirectory(
             "-no-pie",
             "-fno-sanitize-recover=all",
             "-I" + str(ROOT / "include"),
+            "-I" + str(ROOT / "tests"),
+                "-I" + str(ROOT / "esp32_rom" / "tests"),
+            '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
             str(path / "deadline.c"),
+            str(ROOT / "esp32_rom" / "tests" / "port_native_impl.c"),
             "-o",
             str(path / "deadline"),
         ],

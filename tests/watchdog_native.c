@@ -1,6 +1,7 @@
 /* Native shims exercise the production include, not a watchdog reimplementation. */
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
+#include "port_native.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>

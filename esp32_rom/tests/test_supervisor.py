@@ -41,7 +41,7 @@ def flat(text):
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "main/supervisor.inc").read_text()
-SERVICE = (ROOT / "main/service.c").read_text()
+SERVICE = (ROOT / "main/resident.c").read_text()
 BUSINESS = (ROOT / "module/business.c").read_text()
 
 
@@ -65,6 +65,7 @@ class SupervisorTests(unittest.TestCase):
                 "-shared",
                 "-fPIC",
                 str(p / "parser.c"),
+                str(ROOT / "esp32_rom" / "tests" / "port_native_impl.c"),
                 "-o",
                 str(p / "parser.so"),
             ],

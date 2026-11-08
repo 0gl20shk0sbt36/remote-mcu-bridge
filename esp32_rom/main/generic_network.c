@@ -1,7 +1,6 @@
 /* Base-owned, protocol-neutral authenticated TCP listeners (ABI4). */
 #include "generic_network.h"
-#include "sdkconfig.h"
-#include "esp_log.h"
+#include "rmb/port.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -12,10 +11,6 @@
 #include <sys/select.h>
 #include <unistd.h>
 #include "lwip/inet.h"
-#include "esp_timer.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/semphr.h"
 
 extern bool module_runtime_code_pointer(const void *);
 extern bool module_runtime_ready(void);
@@ -30,7 +25,7 @@ extern bool socket_exact(int, void *, size_t, bool, int64_t);
 #define GENERATION_MAX ((uint32_t)(INT32_MAX - LISTENERS) / LISTENERS)
 enum { COLD, INIT, COMMITTED, ABORTED };
 static atomic_int phase;
-static TaskHandle_t init_task;
+static rmb_task_t init_task;
 static unsigned listener_count;
 static bool registration_failed;
 typedef struct {
@@ -40,8 +35,8 @@ typedef struct {
     bool active;
     rmb_connection_fn handler;
     void *context;
-    TaskHandle_t task;
-    SemaphoreHandle_t lock;
+    rmb_task_t task;
+    rmb_mutex_t lock;
     unsigned char replay[HEADER_MAX];
     size_t replay_size, replay_pos;
 } connection_slot;
@@ -298,7 +293,7 @@ static bool auth_header(connection_slot *s) {
     /* Keep the raw line separate from decoded validation: legacy services must
      * see byte-for-byte replay, not JSON reserialization or a second auth ACK. */
     size_t n = 0;
-    int64_t deadline = esp_timer_get_time() + AUTH_US;
+    int64_t deadline = rmb_port_now_us() + AUTH_US;
     while (n < HEADER_MAX) {
         if (!socket_exact(s->fd, s->replay + n, 1, false, deadline) || !s->replay[n])
             return false;
@@ -312,20 +307,20 @@ static bool auth_header(connection_slot *s) {
     if (p.p == p.end || *p.p != '{' || !compound(&p, true, true))
         return false;
     space(&p);
-    if (p.p != p.end || p.tokens != 1 || esp_timer_get_time() >= deadline ||
+    if (p.p != p.end || p.tokens != 1 || rmb_port_now_us() >= deadline ||
         !authenticated(p.token))
         return false;
     s->replay_pos = 0;
     s->replay_size = (s->flags == RMB_NET_AUTH_REPLAY) ? n : 0;
     return true;
 }
-static TickType_t ticks_left(int64_t deadline) {
-    int64_t left = deadline - esp_timer_get_time();
+static uint32_t ticks_left(int64_t deadline) {
+    int64_t left = deadline - rmb_port_now_us();
     if (left <= 0)
         return 0;
     /* Round down: lock waiting must not exceed the supplied deadline. */
-    uint64_t ticks = (uint64_t)left / (1000u * portTICK_PERIOD_MS);
-    return ticks > portMAX_DELAY - 1 ? portMAX_DELAY - 1 : (TickType_t)ticks;
+    uint64_t ticks = (uint64_t)RMB_MS_TO_TICKS(left / 1000);
+    return ticks > RMB_WAIT_FOREVER - 1 ? RMB_WAIT_FOREVER - 1 : (uint32_t)ticks;
 }
 static connection_slot *acquire(rmb_connection handle, bool nonblocking, int64_t deadline,
                                 int *failure) {
@@ -339,19 +334,19 @@ static connection_slot *acquire(rmb_connection handle, bool nonblocking, int64_t
     connection_slot *s = &slots[index];
     if (!s->lock)
         return NULL;
-    if (xSemaphoreTake(s->lock, nonblocking ? 0 : ticks_left(deadline)) != pdTRUE) {
+    if (rmb_port_mutex_take(s->lock, nonblocking ? 0 : ticks_left(deadline))) {
         if (failure && nonblocking)
             *failure = RMB_IO_AGAIN;
         return NULL;
     }
     if (!s->active || s->generation != generation) {
-        xSemaphoreGive(s->lock);
+        rmb_port_mutex_give(s->lock);
         return NULL;
     }
     return s;
 }
 static bool net_exact(rmb_connection h, void *buffer, size_t size, bool writing, int64_t deadline) {
-    if ((size && !buffer) || deadline <= esp_timer_get_time())
+    if ((size && !buffer) || deadline <= rmb_port_now_us())
         return false;
     connection_slot *s = acquire(h, false, deadline, NULL);
     if (!s)
@@ -366,16 +361,16 @@ static bool net_exact(rmb_connection h, void *buffer, size_t size, bool writing,
         p += n;
         size -= n;
     }
-    bool ok = esp_timer_get_time() < deadline &&
+    bool ok = rmb_port_now_us() < deadline &&
               (!size || socket_exact(s->fd, p, size, writing, deadline));
-    ok = ok && esp_timer_get_time() < deadline;
-    xSemaphoreGive(s->lock);
+    ok = ok && rmb_port_now_us() < deadline;
+    rmb_port_mutex_give(s->lock);
     return ok;
 }
 static int transfer(rmb_connection h, void *buffer, size_t size, bool writing, bool nonblocking) {
     if ((size && !buffer) || size > INT_MAX)
         return RMB_IO_ERROR;
-    int64_t deadline = esp_timer_get_time() + IO_US;
+    int64_t deadline = rmb_port_now_us() + IO_US;
     int failure = RMB_IO_ERROR;
     connection_slot *s = acquire(h, nonblocking, deadline, &failure);
     if (!s)
@@ -396,7 +391,7 @@ static int transfer(rmb_connection h, void *buffer, size_t size, bool writing, b
     }
     for (;;) {
         if (!nonblocking) {
-            int64_t left = deadline - esp_timer_get_time();
+            int64_t left = deadline - rmb_port_now_us();
             if (left <= 0)
                 break;
             struct timeval tv = {.tv_sec = left / 1000000, .tv_usec = left % 1000000};
@@ -431,7 +426,7 @@ static int transfer(rmb_connection h, void *buffer, size_t size, bool writing, b
         break;
     }
 done:
-    xSemaphoreGive(s->lock);
+    rmb_port_mutex_give(s->lock);
     return result;
 }
 static int net_read(rmb_connection h, void *b, size_t n, bool nb) {
@@ -446,10 +441,10 @@ static bool nonblock(int fd) {
 }
 static void listener_worker(void *arg) {
     connection_slot *s = arg;
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    rmb_port_task_wait_notify();
     while (atomic_load(&phase) == COMMITTED) {
         if (!module_runtime_ready()) {
-            vTaskDelay(pdMS_TO_TICKS(20) + 1);
+            rmb_port_delay_ticks(RMB_MS_TO_TICKS(20) + 1);
             continue;
         }
         struct timeval tv = {.tv_sec = 0, .tv_usec = 100000};
@@ -473,32 +468,32 @@ static void listener_worker(void *arg) {
         }
         s->fd = fd;
         if (auth_header(s) && atomic_load(&phase) == COMMITTED && module_runtime_ready()) {
-            xSemaphoreTake(s->lock, portMAX_DELAY);
+            rmb_port_mutex_take(s->lock, RMB_WAIT_FOREVER);
             ++s->generation;
             s->active = true;
             rmb_connection h =
                 (rmb_connection)(s->generation * LISTENERS + (unsigned)(s - slots) + 1);
-            xSemaphoreGive(s->lock);
+            rmb_port_mutex_give(s->lock);
             s->handler(h, s->context);
             /* ESP-IDF reports the minimum unused stack in BYTES. Include the
              * complete service/driver/libc call chain, not just its C frame. */
-            ESP_LOGI("rmb-net", "port=%u stack_min_free_bytes=%u", (unsigned)s->port,
-                     (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            RMB_LOGI("rmb-net", "port=%u stack_min_free_bytes=%u", (unsigned)s->port,
+                     (unsigned)rmb_port_task_stack_min_free());
             /* Synchronous supervised jobs are complete before callback returns. */
-            xSemaphoreTake(s->lock, portMAX_DELAY);
+            rmb_port_mutex_take(s->lock, RMB_WAIT_FOREVER);
             s->active = false;
             close(fd);
             s->fd = -1;
-            xSemaphoreGive(s->lock);
+            rmb_port_mutex_give(s->lock);
         } else {
             close(fd);
             s->fd = -1;
         }
     }
-    vTaskDelete(NULL);
+    rmb_port_task_end();
 }
 static int try_listen(uint16_t port, uint32_t flags, rmb_connection_fn handler, void *context) {
-    if (atomic_load(&phase) != INIT || xTaskGetCurrentTaskHandle() != init_task || !port ||
+    if (atomic_load(&phase) != INIT || rmb_port_task_current() != init_task || !port ||
         port == 3335 || port == 3337 || flags > RMB_NET_AUTH_REPLAY || !handler ||
         !module_runtime_code_pointer((const void *)handler) || listener_count == LISTENERS)
         return -1;
@@ -516,8 +511,7 @@ static int try_listen(uint16_t port, uint32_t flags, rmb_connection_fn handler, 
         return -1;
     }
     connection_slot *s = &slots[listener_count];
-    s->lock = xSemaphoreCreateMutex();
-    if (!s->lock) {
+    if (rmb_port_mutex_create(&s->lock)) {
         close(fd);
         return -1;
     }
@@ -532,7 +526,7 @@ static int try_listen(uint16_t port, uint32_t flags, rmb_connection_fn handler, 
 }
 static int net_listen(uint16_t port, uint32_t flags, rmb_connection_fn handler, void *context) {
     int rc = try_listen(port, flags, handler, context);
-    if (rc && atomic_load(&phase) == INIT && xTaskGetCurrentTaskHandle() == init_task)
+    if (rc && atomic_load(&phase) == INIT && rmb_port_task_current() == init_task)
         registration_failed = true;
     return rc;
 }
@@ -546,7 +540,7 @@ const rmb_net_api rmb_network_api = {.abi = RMB_SERVICE_ABI,
 void rmb_network_init_begin(void) {
     int expected = COLD;
     if (atomic_compare_exchange_strong(&phase, &expected, INIT))
-        init_task = xTaskGetCurrentTaskHandle();
+        init_task = rmb_port_task_current();
 }
 void rmb_network_init_abort(void) {
     int state = atomic_exchange(&phase, ABORTED);
@@ -557,7 +551,7 @@ void rmb_network_init_abort(void) {
     for (unsigned i = 0; i < listener_count; ++i) {
         connection_slot *s = &slots[i];
         if (s->task) {
-            vTaskDelete(s->task);
+            rmb_port_task_terminate(s->task);
             s->task = NULL;
         }
         if (s->listener >= 0) {
@@ -578,21 +572,21 @@ void rmb_network_init_abort(void) {
 bool rmb_network_init_commit(void) {
     /* Publish only after all workers exist. Notifications hold workers behind
      * this barrier; runtime readiness separately gates entry into module code. */
-    if (atomic_load(&phase) != INIT || xTaskGetCurrentTaskHandle() != init_task)
+    if (atomic_load(&phase) != INIT || rmb_port_task_current() != init_task)
         return false;
     if (registration_failed) {
         rmb_network_init_abort();
         return false;
     }
     for (unsigned i = 0; i < listener_count; ++i) {
-        if (xTaskCreate(listener_worker, "rmb-listener", CONFIG_RMB_LISTENER_STACK_BYTES, &slots[i],
-                        5, &slots[i].task) != pdPASS) {
+        if (rmb_port_task_create("rmb-listener", listener_worker, &slots[i],
+                                 RMB_CONFIG_LISTENER_STACK_BYTES, 5, &slots[i].task)) {
             rmb_network_init_abort();
             return false;
         }
     }
     atomic_store(&phase, COMMITTED);
     for (unsigned i = 0; i < listener_count; ++i)
-        xTaskNotifyGive(slots[i].task);
+        rmb_port_task_notify(slots[i].task);
     return true;
 }

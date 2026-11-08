@@ -1,9 +1,7 @@
 /* Resident supervisor. Included by service.c after resident stream helpers.
  * No task deletion/cancellation: synchronous queue submitters retain every
  * borrowed pointer until completion or whole-chip reset. No memory isolation. */
-#include "esp_attr.h"
-#include "esp_system.h"
-#include "esp_task_wdt.h"
+#include "rmb/port.h"
 #include "module_runtime.h"
 #define SUPERVISOR_PORT 3337
 static void service_watchdog_poll(void);
@@ -17,8 +15,8 @@ static void service_supervisor_fault(uint32_t, bool, uint32_t, int64_t, int64_t,
 #include "rmb/supervisor.h"
 #define SUPERVISOR_JOB_US (1800LL * 1000000)
 typedef rmb_supervisor_record supervisor_record;
-static RTC_NOINIT_ATTR supervisor_record supervisor_rtc;
-static portMUX_TYPE supervisor_lock = portMUX_INITIALIZER_UNLOCKED;
+static RMB_RETAINED supervisor_record supervisor_rtc;
+static rmb_lock_t supervisor_lock = RMB_LOCK_INIT;
 static bool supervisor_fault, supervisor_active, supervisor_updating, supervisor_reboot_required;
 static bool supervisor_initializing;
 /* Boot-only execution permission; NEVER recomputed from current ready/footer. */
@@ -27,15 +25,15 @@ static rmb_supervisor_entry supervisor_entry;
 static uint32_t supervisor_stage, supervisor_uploaded;
 /* Progress feeds TWDT/diagnostics, but never extends the job's total budget. */
 static int64_t supervisor_started, supervisor_last_progress, supervisor_limit_us;
-static TaskHandle_t supervisor_worker_handle;
-static QueueHandle_t supervisor_queue;
+static rmb_task_t supervisor_worker_handle;
+static rmb_queue_t supervisor_queue;
 typedef enum { SJ_INIT, SJ_CALL, SJ_HANG } supervisor_kind;
 typedef struct {
     supervisor_kind kind;
     rmb_job_fn function;
     void *context;
     int64_t timeout_us;
-    SemaphoreHandle_t done;
+    rmb_sem_t done;
     int result;
 } supervisor_job;
 static void supervisor_record_write_locked(void) {
@@ -43,33 +41,34 @@ static void supervisor_record_write_locked(void) {
                                 supervisor_stage);
 }
 static void supervisor_progress(void) {
-    if (xTaskGetCurrentTaskHandle() != supervisor_worker_handle)
+    if (rmb_port_task_current() != supervisor_worker_handle)
         return;
-    portENTER_CRITICAL(&supervisor_lock);
-    supervisor_last_progress = esp_timer_get_time();
+    rmb_port_lock_enter(&supervisor_lock);
+    supervisor_last_progress = rmb_port_now_us();
     ++supervisor_stage; /* Monotonic callback sequence, not untrusted module text. */
     supervisor_record_write_locked();
-    portEXIT_CRITICAL(&supervisor_lock);
-    (void)esp_task_wdt_reset();
+    rmb_port_lock_exit(&supervisor_lock);
+    (void)rmb_port_wdt_feed();
 }
 static void supervisor_worker(void *arg) {
     (void)arg;
-    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+    if (rmb_port_wdt_register_current())
+        RMB_LOGE(TAG, "watchdog registration failed");
     for (;;) {
         supervisor_job *job = NULL;
-        (void)esp_task_wdt_reset();
-        if (xQueueReceive(supervisor_queue, &job, pdMS_TO_TICKS(250)) != pdTRUE)
+        (void)rmb_port_wdt_feed();
+        if (rmb_port_queue_receive(supervisor_queue, &job, RMB_MS_TO_TICKS(250)))
             continue;
-        portENTER_CRITICAL(&supervisor_lock);
+        rmb_port_lock_enter(&supervisor_lock);
         supervisor_active = true;
         supervisor_initializing = job->kind == SJ_INIT;
         supervisor_stage = 0;
-        supervisor_started = supervisor_last_progress = esp_timer_get_time();
+        supervisor_started = supervisor_last_progress = rmb_port_now_us();
         supervisor_limit_us = job->timeout_us ? job->timeout_us : 60000000LL;
         if (job->kind == SJ_HANG)
             supervisor_fault = true;
         supervisor_record_write_locked();
-        portEXIT_CRITICAL(&supervisor_lock);
+        rmb_port_lock_exit(&supervisor_lock);
         switch (job->kind) {
         case SJ_INIT:
             if (!service_watchdog_begin_init()) {
@@ -86,10 +85,10 @@ static void supervisor_worker(void *arg) {
         case SJ_HANG:
             /* Yield CPU to network/idle but NEVER feed this worker's TWDT subscription. */
             for (;;)
-                vTaskDelay(1);
+                rmb_port_delay_ticks(1);
         }
-        portENTER_CRITICAL(&supervisor_lock);
-        int64_t completed = esp_timer_get_time(), began = supervisor_started;
+        rmb_port_lock_enter(&supervisor_lock);
+        int64_t completed = rmb_port_now_us(), began = supervisor_started;
         int64_t progress = supervisor_last_progress, limit = supervisor_limit_us;
         uint32_t checkpoint = supervisor_stage;
         /* Job helper expires strictly beyond the budget (not at equality), unlike
@@ -104,7 +103,7 @@ static void supervisor_worker(void *arg) {
             supervisor_initializing = false;
         }
         supervisor_record_write_locked();
-        portEXIT_CRITICAL(&supervisor_lock);
+        rmb_port_lock_exit(&supervisor_lock);
         if (fatal) {
             /* Completion may race the monitor: never erase an already missed deadline.
              * Record outside supervisor_lock; the journal takes its own lease lock. */
@@ -113,33 +112,33 @@ static void supervisor_worker(void *arg) {
                                      progress, limit, completed);
             if (job->kind == SJ_INIT)
                 service_watchdog_abort_init();
-            esp_restart();
+            rmb_port_restart();
             return; /* Native reset seams may return. Never signal caller success. */
         }
-        (void)esp_task_wdt_reset();
+        (void)rmb_port_wdt_feed();
         if (job->done)
-            xSemaphoreGive(job->done);
+            rmb_port_sem_give(job->done);
     }
 }
 static int supervisor_submit(supervisor_job *job) {
     if (!supervisor_queue || (supervisor_fault && job->kind != SJ_INIT))
         return -1;
-    job->done = xSemaphoreCreateBinary();
+    if (rmb_port_sem_create(&job->done))
     if (!job->done)
         return -1;
-    if (xQueueSend(supervisor_queue, &job, 0) != pdTRUE) {
-        vSemaphoreDelete(job->done);
+    if (rmb_port_queue_send(supervisor_queue, &job, 0)) {
+        rmb_port_sem_delete(job->done);
         return -1;
     }
     /* Never time out and return borrowed stack/I/O pointers to a live worker. */
-    xSemaphoreTake(job->done, portMAX_DELAY);
-    vSemaphoreDelete(job->done);
+    rmb_port_sem_take(job->done, RMB_WAIT_FOREVER);
+    rmb_port_sem_delete(job->done);
     return job->result;
 }
 static int supervisor_run(rmb_job_fn fn, void *context, int64_t timeout_us) {
     if (!module_runtime_ready() || !module_runtime_code_pointer((const void *)fn) ||
         timeout_us <= 0 || timeout_us > SUPERVISOR_JOB_US ||
-        xTaskGetCurrentTaskHandle() == supervisor_worker_handle)
+        rmb_port_task_current() == supervisor_worker_handle)
         return -1;
     supervisor_job job = {
         .kind = SJ_CALL, .function = fn, .context = context, .timeout_us = timeout_us};
@@ -154,19 +153,19 @@ static int supervisor_start(void) {
         return -1;
     init_job = (supervisor_job){.kind = SJ_INIT};
     supervisor_job *pending = &init_job;
-    portENTER_CRITICAL(&supervisor_lock);
+    rmb_port_lock_enter(&supervisor_lock);
     supervisor_active = true;
     supervisor_initializing = true;
     supervisor_stage = 0;
-    supervisor_started = supervisor_last_progress = esp_timer_get_time();
+    supervisor_started = supervisor_last_progress = rmb_port_now_us();
     supervisor_limit_us = 60000000LL;
     supervisor_record_write_locked();
-    portEXIT_CRITICAL(&supervisor_lock);
-    if (xQueueSend(supervisor_queue, &pending, 0) != pdTRUE) {
-        portENTER_CRITICAL(&supervisor_lock);
+    rmb_port_lock_exit(&supervisor_lock);
+    if (rmb_port_queue_send(supervisor_queue, &pending, 0)) {
+        rmb_port_lock_enter(&supervisor_lock);
         supervisor_active = false;
         supervisor_record_write_locked();
-        portEXIT_CRITICAL(&supervisor_lock);
+        rmb_port_lock_exit(&supervisor_lock);
         return -1;
     }
     rmb_supervisor_entry_submitted(&supervisor_entry);
@@ -177,15 +176,15 @@ static void supervisor_status(int fd) {
     bool active, fault, updating;
     uint32_t stage, uploaded;
     int64_t elapsed, progress;
-    portENTER_CRITICAL(&supervisor_lock);
+    rmb_port_lock_enter(&supervisor_lock);
     active = supervisor_active;
     fault = supervisor_fault;
     updating = supervisor_updating;
     stage = supervisor_stage;
     uploaded = supervisor_uploaded;
-    elapsed = active ? (esp_timer_get_time() - supervisor_started) / 1000 : 0;
-    progress = active ? (esp_timer_get_time() - supervisor_last_progress) / 1000 : 0;
-    portEXIT_CRITICAL(&supervisor_lock);
+    elapsed = active ? (rmb_port_now_us() - supervisor_started) / 1000 : 0;
+    progress = active ? (rmb_port_now_us() - supervisor_last_progress) / 1000 : 0;
+    rmb_port_lock_exit(&supervisor_lock);
     snprintf(out, sizeof out,
              "{\"ok\":true,\"supervisor\":17,\"update_mode\":%s,\"module_abi\":%u,\"text_address\":"
              "%lu,\"data_address\":%lu,\"module_ready\":%s,\"fault\":%s,\"fault_pending\":%s,"
@@ -198,7 +197,7 @@ static void supervisor_status(int fd) {
              fault ? "true" : "false", service_fault_pending() ? "true" : "false",
              active || updating || module_runtime_busy() ? "true" : "false",
              updating ? "true" : "false", (unsigned long)uploaded, (unsigned long)stage,
-             (long long)elapsed, (long long)progress, (int)esp_reset_reason());
+             (long long)elapsed, (long long)progress, (int)rmb_port_reset_reason());
     reply(fd, out);
 }
 static bool supervisor_hex(const char *s, uint8_t digest[32]) {
@@ -226,7 +225,7 @@ static bool supervisor_hex(const char *s, uint8_t digest[32]) {
 static void supervisor_serve(int fd) {
     char line[REQUEST_MAX + 1];
     size_t used = 0;
-    int64_t deadline = esp_timer_get_time() + HEADER_US;
+    int64_t deadline = rmb_port_now_us() + HEADER_US;
     while (used < REQUEST_MAX) {
         if (!socket_exact(fd, line + used, 1, false, deadline)) {
             failure(fd, "request timeout or disconnect");
@@ -304,8 +303,8 @@ static void supervisor_serve(int fd) {
         cJSON_Delete(r);
         reply(fd, "{\"ok\":true}\n");
         shutdown(fd, SHUT_WR);
-        vTaskDelay(pdMS_TO_TICKS(100));
-        esp_restart();
+        rmb_port_delay_ticks(RMB_MS_TO_TICKS(100));
+        rmb_port_restart();
         return;
     }
     if (!strcmp(op->valuestring, "enter-update")) {
@@ -316,14 +315,14 @@ static void supervisor_serve(int fd) {
             failure(fd, "module footer erase/verify failed; retry enter-update");
             return;
         }
-        portENTER_CRITICAL(&supervisor_lock);
+        rmb_port_lock_enter(&supervisor_lock);
         supervisor_active = false;
         supervisor_record_write_locked();
-        portEXIT_CRITICAL(&supervisor_lock);
+        rmb_port_lock_exit(&supervisor_lock);
         reply(fd, "{\"ok\":true,\"reboot_required\":true}\n");
         shutdown(fd, SHUT_WR);
-        vTaskDelay(pdMS_TO_TICKS(100));
-        esp_restart();
+        rmb_port_delay_ticks(RMB_MS_TO_TICKS(100));
+        rmb_port_restart();
         return;
     }
     if (upload && (!module_runtime_update_allowed() || supervisor_reboot_required)) {
@@ -340,10 +339,10 @@ static void supervisor_serve(int fd) {
     uint32_t size = 0;
     uint8_t digest[32];
     cJSON *hash = cJSON_GetObjectItemCaseSensitive(r, "sha256");
-    const esp_partition_t *partition =
-        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, 0x41, "business");
-    if (upload && (!partition || !number(cJSON_GetObjectItemCaseSensitive(r, "size"), &size) ||
-                   size == 0 || size > partition->size - 4096 || !cJSON_IsString(hash) ||
+    uint32_t slot_size = 0, slot_footer = 0;
+    bool slot_ok = rmb_port_slot_geometry(&slot_size, &slot_footer) == 0;
+    if (upload && (!slot_ok || !number(cJSON_GetObjectItemCaseSensitive(r, "size"), &size) ||
+                   size == 0 || size > slot_size - slot_footer || !cJSON_IsString(hash) ||
                    !supervisor_hex(hash->valuestring, digest))) {
         cJSON_Delete(r);
         failure(fd, "invalid module size or sha256");
@@ -370,10 +369,10 @@ static void supervisor_serve(int fd) {
             failure(fd, "initialization already attempted; restart ESP to activate module");
             return;
         }
-        portENTER_CRITICAL(&supervisor_lock);
+        rmb_port_lock_enter(&supervisor_lock);
         supervisor_fault = false;
         supervisor_record_write_locked();
-        portEXIT_CRITICAL(&supervisor_lock);
+        rmb_port_lock_exit(&supervisor_lock);
         int rc = module_runtime_ready() ? 0 : supervisor_start();
         if (rc)
             failure(fd, "module initialization could not be queued");
@@ -390,27 +389,27 @@ static void supervisor_serve(int fd) {
         static supervisor_job test_job;
         test_job = (supervisor_job){.kind = SJ_HANG};
         supervisor_job *pending = &test_job;
-        portENTER_CRITICAL(&supervisor_lock);
+        rmb_port_lock_enter(&supervisor_lock);
         supervisor_fault = true;
         supervisor_active = true;
-        supervisor_started = supervisor_last_progress = esp_timer_get_time();
+        supervisor_started = supervisor_last_progress = rmb_port_now_us();
         supervisor_limit_us = 60000000LL;
         supervisor_record_write_locked();
-        portEXIT_CRITICAL(&supervisor_lock);
-        if (xQueueSend(supervisor_queue, &pending, 0) != pdTRUE) {
-            portENTER_CRITICAL(&supervisor_lock);
+        rmb_port_lock_exit(&supervisor_lock);
+        if (rmb_port_queue_send(supervisor_queue, &pending, 0)) {
+            rmb_port_lock_enter(&supervisor_lock);
             supervisor_active = false;
             supervisor_record_write_locked();
-            portEXIT_CRITICAL(&supervisor_lock);
+            rmb_port_lock_exit(&supervisor_lock);
             failure(fd, "worker queue busy; fault latched");
         } else
             reply(fd, "{\"ok\":true,\"test\":\"watchdog-reset\"}\n");
         return;
     }
-    portENTER_CRITICAL(&supervisor_lock);
+    rmb_port_lock_enter(&supervisor_lock);
     supervisor_updating = true;
     supervisor_uploaded = 0;
-    portEXIT_CRITICAL(&supervisor_lock);
+    rmb_port_lock_exit(&supervisor_lock);
     /* Runtime MUST invalidate and erase/verify footer BEFORE touching body. */
     int rc = module_runtime_install_begin(size);
     if (rc) {
@@ -420,7 +419,7 @@ static void supervisor_serve(int fd) {
     }
     if (!reply(fd, "{\"ok\":true,\"ready\":true}\n"))
         goto upload_abort;
-    deadline = esp_timer_get_time() + UPLOAD_US;
+    deadline = rmb_port_now_us() + UPLOAD_US;
     uint8_t block[1024];
     for (uint32_t offset = 0; offset < size;) {
         size_t n = size - offset;
@@ -435,37 +434,37 @@ static void supervisor_serve(int fd) {
             goto upload_abort;
         }
         offset += (uint32_t)n;
-        portENTER_CRITICAL(&supervisor_lock);
+        rmb_port_lock_enter(&supervisor_lock);
         supervisor_uploaded = offset;
-        portEXIT_CRITICAL(&supervisor_lock);
+        rmb_port_lock_exit(&supervisor_lock);
     }
     /* Finish verifies stored bytes/format and commits footer; NEVER calls entry. */
     if (module_runtime_install_finish(digest)) {
         failure(fd, "module hash, format or commit failed");
         goto upload_abort;
     }
-    portENTER_CRITICAL(&supervisor_lock);
+    rmb_port_lock_enter(&supervisor_lock);
     supervisor_fault = false;
     supervisor_active = false;
     supervisor_stage = 0;
     supervisor_limit_us = 0;
     supervisor_reboot_required = true;
     supervisor_record_write_locked();
-    portEXIT_CRITICAL(&supervisor_lock);
+    rmb_port_lock_exit(&supervisor_lock);
     reply(fd, "{\"ok\":true,\"reboot_required\":true}\n");
     goto upload_done;
 upload_abort:
     module_runtime_invalidate();
 upload_done:
-    portENTER_CRITICAL(&supervisor_lock);
+    rmb_port_lock_enter(&supervisor_lock);
     supervisor_updating = false;
-    portEXIT_CRITICAL(&supervisor_lock);
+    rmb_port_lock_exit(&supervisor_lock);
 }
 static void supervisor_management(void *arg) {
     (void)arg;
     int server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (server < 0) {
-        vTaskDelete(NULL);
+        rmb_port_task_end();
         return;
     }
     int one = 1;
@@ -475,18 +474,18 @@ static void supervisor_management(void *arg) {
                                .sin_addr.s_addr = htonl(INADDR_ANY)};
     if (bind(server, (struct sockaddr *)&addr, sizeof addr) || listen(server, 2)) {
         close(server);
-        vTaskDelete(NULL);
+        rmb_port_task_end();
         return;
     }
     /* Bind/listen FIRST. A stuck module entry cannot block network startup or
      * management accept: INIT is asynchronously owned by static storage. */
     if (module_allowed_this_boot && !supervisor_fault && supervisor_start())
-        ESP_LOGE(TAG, "module init queue failed");
+        RMB_LOGE(TAG, "module init queue failed");
     for (;;) {
-        xEventGroupWaitBits(events, CONNECTED, pdFALSE, pdTRUE, portMAX_DELAY);
+        rmb_port_event_wait(network_events, NETWORK_READY, true, RMB_WAIT_FOREVER);
         int fd = accept(server, NULL, NULL);
         if (fd < 0) {
-            vTaskDelay(pdMS_TO_TICKS(100));
+            rmb_port_delay_ticks(RMB_MS_TO_TICKS(100));
             continue;
         }
         struct timeval timeout = {.tv_sec = 2};
@@ -499,15 +498,16 @@ static void supervisor_management(void *arg) {
 }
 static void supervisor_monitor(void *arg) {
     (void)arg;
-    ESP_ERROR_CHECK(esp_task_wdt_add(NULL));
+    if (rmb_port_wdt_register_current())
+        RMB_LOGE(TAG, "watchdog registration failed");
     for (;;) {
-        (void)esp_task_wdt_reset();
+        (void)rmb_port_wdt_feed();
         service_watchdog_poll();
         bool expired, is_init;
         uint32_t checkpoint;
         int64_t now, began, progress, limit;
-        portENTER_CRITICAL(&supervisor_lock);
-        now = esp_timer_get_time();
+        rmb_port_lock_enter(&supervisor_lock);
+        now = rmb_port_now_us();
         began = supervisor_started;
         progress = supervisor_last_progress;
         limit = supervisor_limit_us;
@@ -518,44 +518,39 @@ static void supervisor_monitor(void *arg) {
             supervisor_fault = true;
             supervisor_record_write_locked();
         }
-        portEXIT_CRITICAL(&supervisor_lock);
+        rmb_port_lock_exit(&supervisor_lock);
         if (expired) {
             /* Snapshot under supervisor_lock, release it before taking lease_lock in
              * the fault journal; completion follows the same non-nested lock order. */
             service_supervisor_fault(3u, is_init, checkpoint, began, progress, limit, now);
-            esp_restart();
+            rmb_port_restart();
             return;
         }
-        vTaskDelay(pdMS_TO_TICKS(250));
+        rmb_port_delay_ticks(RMB_MS_TO_TICKS(250));
     }
 }
 static void supervisor_init(void) {
     /* prepare ran even on fault/quarantine boots; ready alone is NOT permission. */
     rmb_supervisor_entry_capture(&supervisor_entry, !module_runtime_update_allowed());
     bool valid = rmb_supervisor_record_valid(&supervisor_rtc);
-    esp_reset_reason_t reason = esp_reset_reason();
+    rmb_reset_reason reason = rmb_port_reset_reason();
     supervisor_fault = rmb_supervisor_boot_fault(
-        &supervisor_rtc, reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT ||
-                             reason == ESP_RST_WDT || reason == ESP_RST_PANIC);
+        &supervisor_rtc, reason == RMB_RST_TASK_WATCHDOG || reason == RMB_RST_INTERRUPT_WATCHDOG ||
+                             reason == RMB_RST_PANIC);
     supervisor_fault |= service_fault_pending();
     supervisor_active = false;
     supervisor_stage = valid ? supervisor_rtc.stage : 0;
     supervisor_record_write_locked();
-    esp_task_wdt_config_t config = {
-        .timeout_ms = 20000, .idle_core_mask = 0, .trigger_panic = true};
-    esp_err_t rc = esp_task_wdt_reconfigure(&config);
-    if (rc == ESP_ERR_INVALID_STATE)
-        rc = esp_task_wdt_init(&config);
-    ESP_ERROR_CHECK(rc);
-    supervisor_queue = xQueueCreate(1, sizeof(supervisor_job *));
-    ESP_ERROR_CHECK(supervisor_queue ? ESP_OK : ESP_ERR_NO_MEM);
-    ESP_ERROR_CHECK(xTaskCreate(supervisor_worker, "module-worker", 8192, NULL, 3,
-                                &supervisor_worker_handle) == pdPASS
-                        ? ESP_OK
-                        : ESP_ERR_NO_MEM);
-    ESP_ERROR_CHECK(xTaskCreate(supervisor_monitor, "module-health", 3072, NULL, 4, NULL) == pdPASS
-                        ? ESP_OK
-                        : ESP_ERR_NO_MEM);
+    const rmb_wdt_config_t watchdog = {.timeout_ms = 20000, .idle_core_mask = 0, .trigger_panic = true};
+    if (rmb_port_wdt_configure(&watchdog))
+        RMB_LOGE(TAG, "watchdog configure failed");
+    if (rmb_port_queue_create(1, sizeof(supervisor_job *), &supervisor_queue))
+        RMB_LOGE(TAG, "supervisor queue create failed");
+    if (rmb_port_task_create("module-worker", supervisor_worker, NULL, 8192, 3,
+                             &supervisor_worker_handle))
+        RMB_LOGE(TAG, "worker task create failed");
+    if (rmb_port_task_create("module-health", supervisor_monitor, NULL, 3072, 4, NULL))
+        RMB_LOGE(TAG, "monitor task create failed");
     /* app_main has already prepared nonexecuting XIP before NVS/Wi-Fi. */
     /* Management starts INIT only AFTER its socket is listening. */
 }

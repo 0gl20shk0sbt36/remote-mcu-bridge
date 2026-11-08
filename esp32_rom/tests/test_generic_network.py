@@ -12,6 +12,7 @@ source = "\n".join(line for line in source.splitlines() if not line.startswith("
 pre = r"""
 #define _POSIX_C_SOURCE 200809L
 #include "rmb/service.h"
+#include "port_native.h"
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -30,37 +31,18 @@ pre = r"""
 #ifndef CONFIG_RMB_LISTENER_STACK_BYTES
 #define CONFIG_RMB_LISTENER_STACK_BYTES 12288
 #endif
-#define ESP_LOGI(...) ((void)0)
-typedef unsigned TickType_t;
-typedef void *TaskHandle_t;
-typedef int *SemaphoreHandle_t;
-#define pdTRUE 1
-#define pdPASS 1
-#define portMAX_DELAY UINT_MAX
-#define portTICK_PERIOD_MS 1
-#define pdMS_TO_TICKS(x) (x)
 static int mutex;
-static int xSemaphoreTake(int *p,unsigned t) {(void)t;if(*p)return 0;*p=1;return 1;}
-static void xSemaphoreGive(int *p) {assert(*p);*p=0;}
-static int *xSemaphoreCreateMutex(void) {return &mutex;}
 static void vSemaphoreDelete(int *p) {(void)p;}
 static bool code_allowed=true;
 static void *current_task=(void *)1;
 static unsigned task_creates, task_notifies, task_deletes;
 static int task_fail_after=-1;
-static void *xTaskGetCurrentTaskHandle(void) {return current_task;}
-static void ulTaskNotifyTake(int a,unsigned b) {(void)a;(void)b;}
-static void vTaskDelay(unsigned n) {(void)n;}
-static void vTaskDelete(void *p) {(void)p;++task_deletes;}
-static void xTaskNotifyGive(void *p) {(void)p;++task_notifies;}
-static int xTaskCreate(void (*f)(void *),const char *name,unsigned stack,void *arg,unsigned priority,void **out) {(void)f;(void)name;assert(stack==CONFIG_RMB_LISTENER_STACK_BYTES);(void)arg;(void)priority;if(task_fail_after==0)return 0;if(task_fail_after>0)--task_fail_after;*out=(void *)2;++task_creates;return 1;}
-static int64_t esp_timer_get_time(void) {struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);return (int64_t)t.tv_sec*1000000+t.tv_nsec/1000;}
 bool module_runtime_code_pointer(const void *p) {return p!=NULL && code_allowed;}
 bool module_runtime_ready(void) {return true;}
 bool authenticated(const char *s) {return s && !strcmp(s,"native-public-token");}
 void rmb_network_init_abort(void);
 """
-service = (ROOT / "esp32_rom/main/service.c").read_text()
+service = (ROOT / "esp32_rom/main/resident.c").read_text()
 pre += service[service.index("bool socket_exact(") : service.index("bool reply(")]
 post = r"""
 static void check(const char *text,size_t n,bool expected) {
@@ -185,7 +167,11 @@ with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", str(Path.home() / 
                 "-fno-sanitize-recover=all",
                 f"-DCONFIG_RMB_LISTENER_STACK_BYTES={stack_bytes}",
                 "-I" + str(ROOT / "include"),
+                "-I" + str(ROOT / "tests"),
+                "-I" + str(ROOT / "esp32_rom" / "tests"),
+                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 str(p / "network.c"),
+                str(ROOT / "esp32_rom" / "tests" / "port_native_impl.c"),
                 "-o",
                 str(p / "network"),
             ],

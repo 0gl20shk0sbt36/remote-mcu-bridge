@@ -8,6 +8,8 @@
 #define MODULE_TEXT_SIZE (0x100000u - MODULE_FOOTER_SIZE - sizeof(module_header))
 #define MODULE_DRAM_SIZE 32768u
 #define MODULE_FOOTER_SIZE 4096u
+/* Fixed single business slot; the platform must report exactly this geometry. */
+#define MODULE_SLOT_SIZE 0x100000u
 /* All on-flash fields little-endian uint32_t. image = header,text,data. */
 typedef struct {
     uint32_t magic, abi, header_size, image_size, text_addr, text_size, data_addr, data_size,

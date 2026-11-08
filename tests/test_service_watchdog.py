@@ -27,6 +27,7 @@ class ProductionWatchdog(unittest.TestCase):
                 "-fno-pie",
                 "-no-pie",
                 str(ROOT / "tests/watchdog_native.c"),
+                str(ROOT / "esp32_rom" / "tests" / "port_native_impl.c"),
                 "-o",
                 str(binary),
             ]
