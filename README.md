@@ -90,6 +90,7 @@ python3 tools/module_ctl.py --help
 ### 文档、贡献与许可证
 
 - [维护与二次开发](docs/DEVELOPMENT.md) · [服务编写与部署手册](docs/USER_GUIDE.md) · [默认 STM ROM/UART 手册](docs/DEFAULT_STM_FIRMWARE.md)
+- [跨平台移植手册](docs/PORTING_GUIDE.md)：移植要完成什么、每项硬性要求、冻结常量、模块构建器移植与验收清单
 - [底座平台移植](docs/RESIDENT_PLATFORM.md)：底座只依赖 `include/rmb/port.h` 的 46 个函数，新平台实现这些即可；边界由 `esp32_rom/tests/test_port_boundary.py` 强制
 - [依赖与平台耦合分析](docs/DEPENDENCY_ANALYSIS.md)：实测服务→底座 0 个私有符号、平台代码占比、剩余硬耦合（`python3 tools/analyze_dependencies.py --proof …` 可复跑）
 
@@ -191,6 +192,7 @@ python3 tools/module_ctl.py --help
 ### Documentation, contributing, and license
 
 - [Development and maintenance](docs/DEVELOPMENT.md) · [Service authoring/deployment](docs/USER_GUIDE.md) · [Default STM ROM/UART](docs/DEFAULT_STM_FIRMWARE.md)
+- [Cross-platform porting handbook](docs/PORTING_GUIDE.md): what a port must do, the requirement behind each item, frozen constants, module-builder porting and the acceptance checklist
 - [Resident platform porting](docs/RESIDENT_PLATFORM.md): the resident depends on 46 functions in `include/rmb/port.h`; a new host implements those, and `esp32_rom/tests/test_port_boundary.py` enforces the boundary
 - [Dependency and platform coupling](docs/DEPENDENCY_ANALYSIS.md): measured service→base coupling (zero private symbols), platform-code share and remaining hard coupling, reproducible with `tools/analyze_dependencies.py`
 

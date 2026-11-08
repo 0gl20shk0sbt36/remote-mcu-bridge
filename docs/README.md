@@ -10,6 +10,7 @@
 |---|---|
 | [ABI4 重构](ABI4_REFACTOR.md)、[服务编写](SERVICE_AUTHORING.md)、[看门狗与重连诊断](WATCHDOG_RECOVERY.md) | 当前接口、生命周期、故障读取/确认与验收边界 |
 | [后端移植指南](BACKEND_PORTING.md) | 通用算法、平台职责、注册流程与验收边界 |
+| [跨平台移植手册](PORTING_GUIDE.md) | 执行清单：平台能力门槛、46 个函数要求、必须改的文件、冻结的 ABI 常量、模块构建器移植、验收清单与常见坑 |
 | [底座平台移植](RESIDENT_PLATFORM.md) | 端口契约 46 个函数、新平台最小实现清单、边界强制测试与 ESP-IDF 参考映射 |
 | [依赖与平台耦合分析](DEPENDENCY_ANALYSIS.md) | 实测数字：服务→底座 0 个私有符号、平台代码占比与剩余硬耦合；附可复跑脚本 `tools/analyze_dependencies.py` |
 | [贡献指南](../CONTRIBUTING.md) | 开发流程、测试和提交要求 |
@@ -38,6 +39,7 @@ Recommended path: first deployment → [User guide](USER_GUIDE.md) → [Default 
 |---|---|
 | [ABI4 contract](ABI4_REFACTOR.md), [Service SDK](SERVICE_AUTHORING.md), [Watchdog recovery](WATCHDOG_RECOVERY.md) | Current interfaces, lifecycle, diagnostic acknowledgment and evidence limits |
 | [Backend porting guide](BACKEND_PORTING.md) | Portable algorithms, platform responsibilities, registration, and acceptance limits |
+| [Cross-platform porting handbook](PORTING_GUIDE.md) | Execution checklist: capability gate, the 46 functions, files to change, frozen ABI constants, module-builder port, acceptance list and pitfalls |
 | [Resident platform porting](RESIDENT_PLATFORM.md) | The 46-function port contract, the minimum a new host implements, the enforced boundary test and the ESP-IDF reference mapping |
 | [Dependency and platform coupling](DEPENDENCY_ANALYSIS.md) | Measured: zero base-private symbols imported by a service, platform-code share, remaining hard coupling; reproducible via `tools/analyze_dependencies.py` |
 | [Contributing](../CONTRIBUTING.md) | Development workflow, tests, and submission requirements |

@@ -2,7 +2,7 @@
 
 ## 中文
 
-本页说明"换一台宿主平台"到底要写多少代码。底座逻辑（鉴权、管理协议、日志环、监督、单槽更新、模块准入）已经是平台无关 C；平台相关部分全部收敛在 `include/rmb/port.h` 一个契约里，ESP-IDF 只是其中一个实现。
+本页说明"换一台宿主平台"到底要写多少代码；**执行清单与逐项要求见 [跨平台移植手册](PORTING_GUIDE.md)**。底座逻辑（鉴权、管理协议、日志环、监督、单槽更新、模块准入）已经是平台无关 C；平台相关部分全部收敛在 `include/rmb/port.h` 一个契约里，ESP-IDF 只是其中一个实现。
 
 ### 1. 边界怎么划
 
@@ -57,7 +57,7 @@
 
 ## English
 
-This page states how much code a host port actually needs. The resident logic (authentication, management protocol, log ring, supervision, single-slot update, module admission) is platform-free C; everything platform-specific is behind one contract, `include/rmb/port.h`, and ESP-IDF is just one implementation.
+This page states how much code a host port actually needs; **the execution checklist and per-item requirements are in the [porting handbook](PORTING_GUIDE.md)**. The resident logic (authentication, management protocol, log ring, supervision, single-slot update, module admission) is platform-free C; everything platform-specific is behind one contract, `include/rmb/port.h`, and ESP-IDF is just one implementation.
 
 ### 1. Where the boundary sits
 
