@@ -49,6 +49,9 @@ try:
         raise ValueError("unsafe build directory")
 except (ValueError, OSError) as exc:
     p.error(str(exc))
+# A relative --root such as "." would otherwise reach idf.py as a relative
+# SDKCONFIG_DEFAULTS path and resolve against the -C project directory.
+a.root = a.root.resolve()
 idf = Path(os.environ.get("IDF_PATH", "__missing_idf__"))
 tool = idf / "tools/idf.py"
 if not tool.is_file():
