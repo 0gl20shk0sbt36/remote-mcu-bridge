@@ -15,8 +15,6 @@ ROOT = Path(__file__).resolve().parents[1]
 HEADERS = {
     "esp_err.h": """#pragma once
 #include <stdint.h>
-#include "rmb/port.h"
-#include "mbedtls/sha256.h"
 #include <stddef.h>
 typedef int esp_err_t;
 #define ESP_OK 0
@@ -47,7 +45,6 @@ typedef struct {uint8_t app_elf_sha256[32];} esp_app_desc_t;
 }
 
 PRE = r"""
-#define TAG "native-supervisor"
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <pthread.h>
@@ -114,26 +111,6 @@ static int esp_partition_erase_range(const esp_partition_t *p,size_t o,size_t n)
 static int esp_partition_write(const esp_partition_t *p,size_t o,const void *v,size_t n) {assert(p==&partition&&o+n<=sizeof flash);if(write_error)return -1;if(o<sizeof flash-4096)body_writes++;const uint8_t *b=v;for(size_t i=0;i<n;i++){assert((flash[o+i]&b[i])==b[i]);flash[o+i]&=b[i];}return 0;}
 static int esp_partition_mmap(const esp_partition_t *p,size_t o,size_t n,int mode,const void **v,unsigned *h) {assert(p==&partition&&!o&&n==sizeof flash&&mode==1);*v=(void *)(uintptr_t)0x42200000;*h=1;return 0;}
 static void esp_partition_munmap(unsigned h) {assert(h==1);}
-
-/* Port storage seam over the fixture's fake flash and mbedtls SHA-256. */
-int rmb_port_slot_geometry(uint32_t *size,uint32_t *footer){*size=sizeof flash;*footer=4096;return 0;}
-int rmb_port_slot_read(uint32_t o,void *d,uint32_t n){return esp_partition_read(&partition,o,d,n)?-1:0;}
-int rmb_port_slot_erase(uint32_t o,uint32_t n){return esp_partition_erase_range(&partition,o,n)?-1:0;}
-int rmb_port_slot_write(uint32_t o,const void *v,uint32_t n){return esp_partition_write(&partition,o,v,n)?-1:0;}
-int rmb_port_slot_sha256(uint32_t o,uint32_t n,uint8_t digest[32]){mbedtls_sha256_context c;mbedtls_sha256_init(&c);int rc=mbedtls_sha256_starts(&c,0);uint8_t b[512];while(!rc&&n){uint32_t k=n>sizeof b?sizeof b:n;if(rmb_port_slot_read(o,b,k)){mbedtls_sha256_free(&c);return -1;}rc=mbedtls_sha256_update(&c,b,k);o+=k;n-=k;}if(!rc)rc=mbedtls_sha256_finish(&c,digest);mbedtls_sha256_free(&c);return rc?-1:0;}
-int rmb_port_slot_map(uint32_t *text){*text=(uint32_t)0x42200000;return 0;}
-int rmb_port_slot_unmap(void){return 0;}
-int rmb_port_base_sha256(uint8_t digest[32]){memset(digest,0,32);return 0;}
-
-/* Standard FreeRTOS mock set the port macros bind to. */
-typedef int *fixture_mutex_t;
-static int fixture_mutex_storage;
-static fixture_mutex_t xSemaphoreCreateMutex(void){return &fixture_mutex_storage;}
-typedef int *fixture_queue_t;
-static int fixture_queue_storage;
-static fixture_queue_t xQueueCreate(unsigned l,unsigned i){(void)l;(void)i;return &fixture_queue_storage;}
-static unsigned uxTaskGetStackHighWaterMark(void *t){(void)t;return 1024;}
-static int xPortInIsrContext(void){return 0;}
 static const esp_app_desc_t *esp_app_get_description(void) {static const esp_app_desc_t a={{0}};return &a;}
 static int native_module_entry(const rmb_host *h) {
  assert(h->abi==4&&h->size==sizeof *h);
@@ -154,6 +131,63 @@ bool rmb_network_init_commit(void) {return true;}
 void rmb_network_init_abort(void) {}
 bool module_watchdog_configured(void) {return true;}
 void module_host_configure(rmb_host *h) {(void)h;}
+#include "rmb/port.h"
+#include "mbedtls/sha256.h"
+#define TAG "native-supervisor"
+#define CONFIG_RMB_TOKEN "native-public-token"
+#ifndef RMB_CONFIG_TOKEN
+#define RMB_CONFIG_TOKEN CONFIG_RMB_TOKEN
+#endif
+
+/* Extra mocks the port contract needs beyond this fixture's own seams. */
+void *xSemaphoreCreateMutex(void){static int lock;return &lock;}
+void *xQueueCreate(unsigned l,unsigned i){(void)l;(void)i;static int q;return &q;}
+int xTaskCreate(void (*f)(void *),const char *n,unsigned s,void *a,int p,void **o){(void)f;(void)n;(void)s;(void)a;(void)p;if(o)*o=(void *)2;return 1;}
+void xTaskNotifyGive(void *t){(void)t;}
+unsigned ulTaskNotifyTake(int c,unsigned t){(void)c;(void)t;return 0;}
+unsigned uxTaskGetStackHighWaterMark(void *t){(void)t;return 1024;}
+int esp_task_wdt_reconfigure(const void *c){(void)c;return 0;}
+int xPortInIsrContext(void){return 0;}
+/* Port contract over this fixture's seams. */
+void rmb_port_log(int level,const char *tag,const char *format,...){(void)level;(void)tag;(void)format;}
+int64_t rmb_port_now_us(void){return esp_timer_get_time();}
+void rmb_port_delay_ticks(uint32_t t){vTaskDelay(t);}
+void rmb_port_restart(void){esp_restart();}
+rmb_reset_reason rmb_port_reset_reason(void){return (rmb_reset_reason)esp_reset_reason();}
+bool rmb_port_in_isr(void){return xPortInIsrContext()!=0;}
+void rmb_port_lock_enter(rmb_lock_t *p){pthread_mutex_lock(p);}
+void rmb_port_lock_exit(rmb_lock_t *p){pthread_mutex_unlock(p);}
+int rmb_port_task_create(const char *n,void (*f)(void *),void *c,uint32_t s,int p,rmb_task_t *o){return xTaskCreate(f,n,s,c,p,o)==1?0:-1;}
+rmb_task_t rmb_port_task_current(void){return xTaskGetCurrentTaskHandle();}
+void rmb_port_task_end(void){vTaskDelete(NULL);}
+void rmb_port_task_terminate(rmb_task_t t){vTaskDelete(t);}
+void rmb_port_task_wait_notify(void){(void)ulTaskNotifyTake(1,0xffffffffu);}
+void rmb_port_task_notify(rmb_task_t t){xTaskNotifyGive(t);}
+uint32_t rmb_port_task_stack_min_free(void){return uxTaskGetStackHighWaterMark(NULL);}
+int rmb_port_mutex_create(rmb_mutex_t *o){*o=xSemaphoreCreateMutex();return *o?0:-1;}
+int rmb_port_mutex_take(rmb_mutex_t m,uint32_t t){return xSemaphoreTake(m,t)?0:-1;}
+void rmb_port_mutex_give(rmb_mutex_t m){xSemaphoreGive(m);}
+void rmb_port_mutex_delete(rmb_mutex_t m){vSemaphoreDelete(m);}
+int rmb_port_sem_create(rmb_sem_t *o){*o=xSemaphoreCreateBinary();return *o?0:-1;}
+int rmb_port_sem_take(rmb_sem_t s,uint32_t t){return xSemaphoreTake(s,t)?0:-1;}
+void rmb_port_sem_give(rmb_sem_t s){xSemaphoreGive(s);}
+void rmb_port_sem_delete(rmb_sem_t s){vSemaphoreDelete(s);}
+int rmb_port_queue_create(uint32_t l,uint32_t i,rmb_queue_t *o){*o=xQueueCreate(l,i);return *o?0:-1;}
+int rmb_port_queue_send(rmb_queue_t q,const void *i,uint32_t t){return xQueueSend(q,i,t)?0:-1;}
+int rmb_port_queue_receive(rmb_queue_t q,void *i,uint32_t t){return xQueueReceive(q,i,t)?0:-1;}
+int rmb_port_wdt_register_current(void){return 0;}
+int rmb_port_wdt_feed(void){return 0;}
+int rmb_port_wdt_configure(const rmb_wdt_config_t *c){(void)c;return 0;}
+void *rmb_port_retained(size_t b,size_t a){(void)b;(void)a;return NULL;}
+/* Storage seam over the fixture's fake flash. */
+int rmb_port_slot_geometry(uint32_t *size,uint32_t *footer){*size=sizeof flash;*footer=4096;return 0;}
+int rmb_port_slot_read(uint32_t o,void *d,uint32_t n){return esp_partition_read(&partition,o,d,n)?-1:0;}
+int rmb_port_slot_erase(uint32_t o,uint32_t n){return esp_partition_erase_range(&partition,o,n)?-1:0;}
+int rmb_port_slot_write(uint32_t o,const void *v,uint32_t n){return esp_partition_write(&partition,o,v,n)?-1:0;}
+int rmb_port_slot_sha256(uint32_t o,uint32_t n,uint8_t digest[32]){mbedtls_sha256_context c;mbedtls_sha256_init(&c);int rc=mbedtls_sha256_starts(&c,0);uint8_t b[512];while(!rc&&n){uint32_t k=n>sizeof b?sizeof b:n;if(rmb_port_slot_read(o,b,k)){mbedtls_sha256_free(&c);return -1;}rc=mbedtls_sha256_update(&c,b,k);o+=k;n-=k;}if(!rc)rc=mbedtls_sha256_finish(&c,digest);mbedtls_sha256_free(&c);return rc?-1:0;}
+int rmb_port_slot_map(uint32_t *text){*text=(uint32_t)0x42200000;return 0;}
+int rmb_port_slot_unmap(void){return 0;}
+int rmb_port_base_sha256(uint8_t digest[32]){memset(digest,0,32);return 0;}
 """
 
 QUEUE = r"""
@@ -167,7 +201,6 @@ static int xQueueReceive(int q,supervisor_job **p,int ticks) {
  while(!queued)pthread_cond_wait(&changed,&qlock);
  *p=queued;queued=NULL;pthread_mutex_unlock(&qlock);return pdTRUE;
 }
-#include "port_compat.h"
 """
 
 SUPPORT = r"""
@@ -242,14 +275,14 @@ def build_run(post):
         subprocess.run(
             [
                 "cc",
-                "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
-                "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
-                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 "-std=c11",
                 "-Wall",
                 "-Wextra",
                 "-Werror",
                 "-Wno-pointer-to-int-cast",
+                '-DRMB_PORT_PLATFORM_HEADER="port_mock_platform.h"',
+                "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
+                "-Wno-unused-function",
                 "-fno-pie",
                 "-no-pie",
                 "-pthread",
