@@ -29,11 +29,18 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXED_DATE = (2026, 11, 8, 0, 0, 0)
 
 
+# Never ship internal development records, even if someone force-added one.
+EXCLUDED_PREFIXES = (".internal/", "docs/validation/", "out/", "dist/")
+
+
 def tracked_files():
     raw = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode()
     files = [name for name in raw.split("\0") if name]
     if not files:
         raise SystemExit("no tracked files; run from a git checkout")
+    leaked = [name for name in files if name.startswith(EXCLUDED_PREFIXES)]
+    if leaked:
+        raise SystemExit("refusing to package internal/derived files: " + ", ".join(sorted(leaked)))
     return sorted(files)
 
 

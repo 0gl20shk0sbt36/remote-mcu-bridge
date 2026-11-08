@@ -20,3 +20,6 @@
 # Local development artifacts: validation evidence, logs, captures
 /docs/validation/
 /evidence/
+
+# Internal development records: kept in-tree but never committed or packaged
+/.internal/
