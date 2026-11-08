@@ -4,6 +4,8 @@
 
 先阅读根目录 [README](../README.md)，了解支持范围、安全默认值、原生测试与 ESP-IDF 5.5.5 构建入口。
 
+优先路线：首次使用 → [服务编写与部署](USER_GUIDE.md) → [默认 STM ROM/UART](DEFAULT_STM_FIRMWARE.md)；二次开发 → [开发与维护](DEVELOPMENT.md) → [服务 SDK 契约](SERVICE_AUTHORING.md)。新底座不自动含 STM 服务；SPI 是可选显式构建。
+
 | 文档/源码 | 用途 |
 |---|---|
 | [ABI4 重构](ABI4_REFACTOR.md)、[服务编写](SERVICE_AUTHORING.md)、[看门狗与重连诊断](WATCHDOG_RECOVERY.md) | 当前接口、生命周期、故障读取/确认与验收边界 |
@@ -28,8 +30,11 @@
 
 Start with the root [README](../README.md) for support limits, safe defaults, native tests, and ESP-IDF 5.5.5 build entry points.
 
+Recommended path: first deployment → [User guide](USER_GUIDE.md) → [Default STM ROM/UART](DEFAULT_STM_FIRMWARE.md); maintenance → [Development](DEVELOPMENT.md) → [Service SDK contract](SERVICE_AUTHORING.md). A new resident requires separate service installation; SPI is explicitly optional.
+
 | Document/source | Purpose |
 |---|---|
+| [ABI4 contract](ABI4_REFACTOR.md), [Service SDK](SERVICE_AUTHORING.md), [Watchdog recovery](WATCHDOG_RECOVERY.md) | Current interfaces, lifecycle, diagnostic acknowledgment and evidence limits |
 | [Backend porting guide](BACKEND_PORTING.md) | Portable algorithms, platform responsibilities, registration, and acceptance limits |
 | [Contributing](../CONTRIBUTING.md) | Development workflow, tests, and submission requirements |
 | [Security policy](../SECURITY.md) | Trusted-network limits, vulnerability reporting, and deployment risks |

@@ -2,15 +2,21 @@
 """Execute actual backend SPI lifecycle with SDK-call shims, ASan/UBSan.
 Not a driver or physical wire simulation; checks backend resource lifetimes.
 """
+
 from pathlib import Path
 import subprocess
 import tempfile
+
 ROOT = Path(__file__).resolve().parents[1]
-source = (ROOT / 'module/platform/esp_idf_io.c').read_text()
-spi = source[source.index('static spi_device_handle_t'):source.index('esp_err_t esp_io_uart_mode(')]
-header = (ROOT / 'module/platform/esp_idf_io.h').read_text()
-pad_types = header[header.index('typedef struct {'):header.index('void esp_io_spi_pad_snapshot_get')]
-stubs = r'''
+source = (ROOT / "module/platform/esp_idf_io.c").read_text()
+spi = source[
+    source.index("static spi_device_handle_t") : source.index("#endif /* RMB_BUILTIN_SPI */")
+]
+header = (ROOT / "module/platform/esp_idf_io.h").read_text()
+pad_types = header[
+    header.index("typedef struct {") : header.index("void esp_io_spi_pad_snapshot_get")
+]
+stubs = r"""
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -51,8 +57,10 @@ static int spi_device_get_trans_result(spi_device_handle_t h,spi_transaction_t *
 }
 static int spi_bus_remove_device(spi_device_handle_t h){assert(h==(void*)1);remove_calls++;return remove_rc;}
 static int spi_bus_free(int host){assert(host==2);free_calls++;return free_rc;}
-'''
-stubs += pad_types + r'''
+"""
+stubs += (
+    pad_types
+    + r"""
 typedef struct {uint64_t pin_bit_mask;int mode,pull_up_en,pull_down_en,intr_type;} gpio_config_t;
 #define GPIO_MODE_INPUT 1
 #define GPIO_INTR_DISABLE 0
@@ -70,8 +78,9 @@ static int gpio_config(const gpio_config_t *c) {
  gpio_calls++;iomux_reg=512+(c->pull_up_en?256:0)+(c->pull_down_en?128:0);return gpio_rc;
 }
 static void vTaskDelay(int ticks) {assert(ticks>=1);delays++;}
-'''
-tests = r'''
+"""
+)
+tests = r"""
 static void reset(void) {
  assert(!esp_io_spi_busy());init_rc=add_rc=queue_rc=result_rc=remove_rc=free_rc=0;
  init_calls=add_calls=queue_calls=result_calls=remove_calls=free_calls=0;wrong_result=false;queued=NULL;
@@ -103,10 +112,24 @@ int main(void) {
  reset();assert(!esp_io_spi_open(100000,&error));remove_rc=14;assert(esp_io_spi_close()==14&&esp_io_spi_busy()&&!free_calls);remove_rc=0;free_rc=15;assert(esp_io_spi_close()==15&&esp_io_spi_busy());free_rc=0;assert(!esp_io_spi_close()&&!esp_io_spi_busy());
  puts("PASS actual SPI backend: static buffers, completion/reap, queue/open/remove/free failures, retained in-flight storage and no reinitialization/overwrite/free while pending");
 }
-'''
-with tempfile.TemporaryDirectory(prefix='spi-backend-native-') as work:
-    cfile = Path(work) / 'backend.c'
-    exe = Path(work) / 'backend'
+"""
+with tempfile.TemporaryDirectory(prefix="spi-backend-native-") as work:
+    cfile = Path(work) / "backend.c"
+    exe = Path(work) / "backend"
     cfile.write_text(stubs + spi + tests)
-    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-g',str(cfile),'-o',str(exe)],check=True)
-    subprocess.run([str(exe)],check=True)
+    subprocess.run(
+        [
+            "cc",
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-fsanitize=address,undefined",
+            "-g",
+            str(cfile),
+            "-o",
+            str(exe),
+        ],
+        check=True,
+    )
+    subprocess.run([str(exe)], check=True)

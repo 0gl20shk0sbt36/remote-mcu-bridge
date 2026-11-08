@@ -4,6 +4,7 @@ Only platform APIs, RISC-V instruction synchronization and entry dispatch are
 shimmed. Flash admission/update, worker, SJ_CALL and management code stay real.
 No hardware, watchdog timing or instruction emulation is claimed.
 """
+
 from pathlib import Path
 import os
 import subprocess
@@ -12,7 +13,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 
 HEADERS = {
-    'esp_err.h': '''#pragma once
+    "esp_err.h": """#pragma once
 #include <stdint.h>
 #include <stddef.h>
 typedef int esp_err_t;
@@ -24,26 +25,26 @@ typedef int esp_err_t;
 #define ESP_ERR_INVALID_ARG -5
 #define ESP_ERR_INVALID_VERSION -6
 #define ESP_ERR_INVALID_CRC -7
-''',
-    'esp_attr.h': '#pragma once\n#define RTC_NOINIT_ATTR\n',
-    'esp_system.h': '#pragma once\n',
-    'esp_task_wdt.h': '#pragma once\n',
-    'freertos/FreeRTOS.h': '#pragma once\n',
-    'freertos/portmacro.h': '#pragma once\n',
-    'esp_partition.h': '''#pragma once
+""",
+    "esp_attr.h": "#pragma once\n#define RTC_NOINIT_ATTR\n",
+    "esp_system.h": "#pragma once\n",
+    "esp_task_wdt.h": "#pragma once\n",
+    "freertos/FreeRTOS.h": "#pragma once\n",
+    "freertos/portmacro.h": "#pragma once\n",
+    "esp_partition.h": """#pragma once
 #include "esp_err.h"
 typedef struct {uint32_t size,address;} esp_partition_t;
 typedef unsigned esp_partition_mmap_handle_t;
 #define ESP_PARTITION_TYPE_DATA 1
 #define ESP_PARTITION_MMAP_INST 1
-''',
-    'esp_app_desc.h': '''#pragma once
+""",
+    "esp_app_desc.h": """#pragma once
 typedef struct {uint8_t app_elf_sha256[32];} esp_app_desc_t;
-''',
-    'native_mbedtls_config.h': '#define MBEDTLS_SHA256_C\n',
+""",
+    "native_mbedtls_config.h": "#define MBEDTLS_SHA256_C\n",
 }
 
-PRE = r'''
+PRE = r"""
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <pthread.h>
@@ -130,9 +131,9 @@ bool rmb_network_init_commit(void) {return true;}
 void rmb_network_init_abort(void) {}
 bool module_watchdog_configured(void) {return true;}
 void module_host_configure(rmb_host *h) {(void)h;}
-'''
+"""
 
-QUEUE = r'''
+QUEUE = r"""
 static int xQueueSend(int q,supervisor_job **p,int ticks) {
  (void)q;(void)ticks;pthread_mutex_lock(&qlock);
  if(queued||reject_queue){pthread_mutex_unlock(&qlock);return 0;}
@@ -143,9 +144,9 @@ static int xQueueReceive(int q,supervisor_job **p,int ticks) {
  while(!queued)pthread_cond_wait(&changed,&qlock);
  *p=queued;queued=NULL;pthread_mutex_unlock(&qlock);return pdTRUE;
 }
-'''
+"""
 
-SUPPORT = r'''
+SUPPORT = r"""
 bool module_service_available(void) {return !supervisor_fault;}
 static void service_fault_status(int fd) {reply(fd,pending_fault?"{\"ok\":true,\"pending\":true}\n":"{\"ok\":true,\"pending\":false}\n");}
 static void *thread(void *arg) {current_task=1;supervisor_worker(arg);return NULL;}
@@ -162,49 +163,93 @@ static void image(uint8_t out[76]) {
  module_header h={MODULE_MAGIC,4,sizeof h,76,0x42200028,4,(uint32_t)(uintptr_t)module_data_reserve,32,4,0x42200028};
  memcpy(out,&h,sizeof h);memset(out+sizeof h,0,36);
 }
-'''
+"""
 
 
 def build_run(post):
     """Compile live production sources with explicit, checked native seams."""
     import sys
-    sys.path.insert(0, str(ROOT.parent / 'tools'))
+
+    sys.path.insert(0, str(ROOT.parent / "tools"))
     from native_deps import cjson
+
     cj = cjson()
-    mbed = Path(os.environ['IDF_PATH']) / 'components/mbedtls/mbedtls'
-    source = (ROOT / 'main/supervisor.inc').read_text()
-    service = (ROOT / 'main/service.c').read_text()
-    runtime = (ROOT / 'main/module_runtime.c').read_text()
+    mbed = Path(os.environ["IDF_PATH"]) / "components/mbedtls/mbedtls"
+    source = (ROOT / "main/supervisor.inc").read_text()
+    service = (ROOT / "main/service.c").read_text()
+    runtime = (ROOT / "main/module_runtime.c").read_text()
     # Native CPUs cannot execute RISC-V fence.i or the uploaded entry address.
     fence = '__asm__ volatile("fence.i" ::: "memory")'
-    entry = '((module_entry_fn)(uintptr_t)h.entry)(&host)'
+    entry = "((module_entry_fn)(uintptr_t)h.entry)(&host)"
     assert runtime.count(fence) == runtime.count(entry) == 1
-    runtime = runtime.replace(fence, 'atomic_thread_fence(memory_order_seq_cst)')
-    runtime = runtime.replace(entry, 'native_module_entry(&host)')
-    helpers = service[service.index('bool authenticated('):service.index('#include "streams.inc"')]
-    types = source[source.index('typedef rmb_supervisor_record'):source.index('static void supervisor_record_write_locked(')]
-    implementation = source[source.index('static void supervisor_record_write_locked('):source.index('static void supervisor_management(')]
+    runtime = runtime.replace(fence, "atomic_thread_fence(memory_order_seq_cst)")
+    runtime = runtime.replace(entry, "native_module_entry(&host)")
+    helpers = service[
+        service.index("bool authenticated(") : service.index('#include "streams.inc"')
+    ]
+    types = source[
+        source.index("typedef rmb_supervisor_record") : source.index(
+            "static void supervisor_record_write_locked("
+        )
+    ]
+    implementation = source[
+        source.index("static void supervisor_record_write_locked(") : source.index(
+            "static void supervisor_management("
+        )
+    ]
     # Unused monitor declaration belongs to the deliberately excluded IDF task.
-    with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as d:
+    with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
         p = Path(d)
         for name, text in HEADERS.items():
             target = p / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text)
-        (p / 'native.c').write_text(PRE + runtime + helpers + '\n#include "rmb/supervisor.h"\n#define SUPERVISOR_JOB_US (1800LL*1000000)\n' + types + QUEUE + implementation + SUPPORT + post)
-        subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
-                        '-Wno-pointer-to-int-cast', '-fno-pie', '-no-pie', '-pthread', '-fsanitize=undefined',
-                        '-DMBEDTLS_CONFIG_FILE="native_mbedtls_config.h"', '-I'+str(mbed/'include'),
-                        '-fno-sanitize-recover=all', '-I'+str(p), '-I'+str(cj),
-                        '-I'+str(ROOT/'main'), '-I'+str(ROOT.parent/'include'),
-                        str(p/'native.c'), str(ROOT.parent/'core/update.c'),
-                        str(ROOT.parent/'core/supervisor.c'), str(cj/'cJSON.c'),
-                        str(mbed/'library/sha256.c'), str(mbed/'library/platform_util.c'),
-                        '-lm', '-o', str(p/'native')], check=True)
-        subprocess.run([str(p/'native')], check=True, timeout=10)
+        (p / "native.c").write_text(
+            PRE
+            + runtime
+            + helpers
+            + '\n#include "rmb/supervisor.h"\n#define SUPERVISOR_JOB_US (1800LL*1000000)\n'
+            + types
+            + QUEUE
+            + implementation
+            + SUPPORT
+            + post
+        )
+        subprocess.run(
+            [
+                "cc",
+                "-std=c11",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-Wno-pointer-to-int-cast",
+                "-fno-pie",
+                "-no-pie",
+                "-pthread",
+                "-fsanitize=undefined",
+                '-DMBEDTLS_CONFIG_FILE="native_mbedtls_config.h"',
+                "-I" + str(mbed / "include"),
+                "-fno-sanitize-recover=all",
+                "-I" + str(p),
+                "-I" + str(cj),
+                "-I" + str(ROOT / "main"),
+                "-I" + str(ROOT.parent / "include"),
+                str(p / "native.c"),
+                str(ROOT.parent / "core/update.c"),
+                str(ROOT.parent / "core/supervisor.c"),
+                str(cj / "cJSON.c"),
+                str(mbed / "library/sha256.c"),
+                str(mbed / "library/platform_util.c"),
+                "-lm",
+                "-o",
+                str(p / "native"),
+            ],
+            check=True,
+        )
+        subprocess.run([str(p / "native")], check=True, timeout=10)
 
 
-POST = r'''
+POST = r"""
 static int __attribute__((aligned(4))) job(void *p) {assert(current_task==1);assert(supervisor_run(job,p,1)==-1);supervisor_progress();return ++*(int *)p;}
 int main(void) {
  reset_boot(false);assert(supervisor_start()==-1);
@@ -245,7 +290,7 @@ int main(void) {
  assert(atomic_load(&feeds)==before);close(f[0]);close(f[1]);
  puts("PASS production ABI4 runtime + supervisor: real commit/admission, generic SJ_CALL/context/progress, hung async INIT, retained RTC CRC, 20 management replies, no worker feed");return 0;
 }
-'''
+"""
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     build_run(POST)

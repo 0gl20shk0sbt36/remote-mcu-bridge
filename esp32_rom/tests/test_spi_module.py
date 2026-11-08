@@ -5,19 +5,23 @@ No ESP-IDF mocks or copied implementations; not a physical bus simulation.
 Run from any directory: python3 esp32_rom/tests/test_spi_module.py
 Native outputs use TMPDIR, never firmware build trees.
 """
+
 from pathlib import Path
 import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 pure = '#include "spi_diagnostic.h"\n'
-harness = r'''
+harness = (
+    r"""
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-''' + pure + r'''
+"""
+    + pure
+    + r"""
 int main(void) {
   uint8_t tx[64], rx[64];
   const uint32_t seqs[]={0,1,2,10,63,100,255,256,65535,0xffffffffU};
@@ -64,12 +68,27 @@ int main(void) {
     "%zu malformed/unrelated lines incl ERR suffixes; 8 parameter boundaries\n",
     sizeof seqs/sizeof *seqs, sizeof details/sizeof *details, sizeof bad/sizeof *bad);
 }
-'''
-with tempfile.TemporaryDirectory(prefix='spi-module-native-') as work:
-    cfile = Path(work) / 'spi_module_native.c'
-    exe = Path(work) / 'spi_module_native'
+"""
+)
+with tempfile.TemporaryDirectory(prefix="spi-module-native-") as work:
+    cfile = Path(work) / "spi_module_native.c"
+    exe = Path(work) / "spi_module_native"
     cfile.write_text(harness)
-    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
-                    '-fsanitize=address,undefined', '-g', '-I'+str(ROOT / 'module/logic'),
-                    str(ROOT / 'module/logic/spi_diagnostic.c'), str(cfile), '-o', str(exe)], check=True)
+    subprocess.run(
+        [
+            "cc",
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-fsanitize=address,undefined",
+            "-g",
+            "-I" + str(ROOT / "module/logic"),
+            str(ROOT / "module/logic/spi_diagnostic.c"),
+            str(cfile),
+            "-o",
+            str(exe),
+        ],
+        check=True,
+    )
     subprocess.run([str(exe)], check=True)

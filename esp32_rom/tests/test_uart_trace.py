@@ -4,6 +4,7 @@
 Only ESP-IDF hardware/console dependencies are mocked, not production callbacks.
 Artifacts survive in TMPDIR (or ~/tmp) for inspection; no SDK configuration read.
 """
+
 import os
 from pathlib import Path
 import re
@@ -12,7 +13,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-STUBS = r'''
+STUBS = r"""
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -87,8 +88,8 @@ static int uart_wait_tx_done(int port,TickType_t ticks) {
  assert(port==UART_PORT && ticks==2000);waits++;return wait_result;
 }
 const char *rom_strerror(int rc) {(void)rc;return "mock I/O error";}
-'''
-TESTS = r'''
+"""
+TESTS = r"""
 static target_diag fresh(void) {
  log_used=0;logs[0]=0;writes=reads=waits=max_read=log_at_write=0;
  pending=consumed=0;noise=require_stopped=false;enabled_at_write=NULL;
@@ -228,37 +229,67 @@ int main(void) {
  snapshots();snapshot_faults();transfers();boundaries();
  puts("PASS actual business.c UART trace host harness (SDK-free)");return 0;
 }
-'''
+"""
+
 
 def main():
     source = (ROOT / "esp32_rom/module/business.c").read_text()
     end = source.index("/* Read the pad input path")
-    prefix = source[:source.index("} target_diag;")]
+    prefix = source[: source.index("} target_diag;")]
     start = prefix.rfind("typedef struct {")
     if start < 0:
         raise RuntimeError("target_diag extraction marker missing")
     extracted = source[start:end]
-    for name in ("target_events", "target_raw", "target_raw_stop", "target_snapshot_drain",
-                 "target_raw_start", "target_prepare", "target_trace", "target_tx", "target_rx"):
+    for name in (
+        "target_events",
+        "target_raw",
+        "target_raw_stop",
+        "target_snapshot_drain",
+        "target_raw_start",
+        "target_prepare",
+        "target_trace",
+        "target_tx",
+        "target_rx",
+    ):
         if not re.search(r"static\s+\w+\s+" + name + r"\s*\(", extracted):
             raise RuntimeError(f"production function missing: {name}")
     base = Path(os.environ.get("TMPDIR", str(Path.home() / "tmp"))).expanduser()
     base.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="uart-trace-host-", dir=base))
     harness = work / "uart_trace_host.c"
-    harness.write_text(STUBS + '\n#line 1 "business.c"\n' + extracted + '\n#line 1 "host_tests.c"\n' + TESTS)
+    harness.write_text(
+        STUBS + '\n#line 1 "business.c"\n' + extracted + '\n#line 1 "host_tests.c"\n' + TESTS
+    )
     binary = work / "uart_trace_host"
-    command = shlex.split(os.environ.get("CC", "cc")) + ["-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-O1", "-g", "-I", str(ROOT / "rom"), str(harness), "-o", str(binary)]
+    command = shlex.split(os.environ.get("CC", "cc")) + [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-pedantic",
+        "-O1",
+        "-g",
+        "-I",
+        str(ROOT / "rom"),
+        str(harness),
+        "-o",
+        str(binary),
+    ]
     print(f"ARTIFACTS: {work}", flush=True)
-    build = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+    build = subprocess.run(
+        command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30
+    )
     (work / "compile.log").write_text(build.stdout)
     if build.returncode:
         print(build.stdout)
         raise SystemExit(build.returncode)
-    run = subprocess.run([str(binary)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10)
+    run = subprocess.run(
+        [str(binary)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10
+    )
     (work / "test.log").write_text(run.stdout)
     print(run.stdout, end="")
     raise SystemExit(run.returncode)
+
 
 if __name__ == "__main__":
     main()

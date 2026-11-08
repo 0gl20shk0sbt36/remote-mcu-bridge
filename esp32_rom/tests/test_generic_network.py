@@ -1,14 +1,15 @@
 """Compile production generic network C with native socket/RTOS shims."""
+
 from pathlib import Path
 import os
 import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
-source = (ROOT/'esp32_rom/main/generic_network.c').read_text()
+source = (ROOT / "esp32_rom/main/generic_network.c").read_text()
 # Strip includes only; all production functions and state are compiled verbatim.
-source = '\n'.join(line for line in source.splitlines() if not line.startswith('#include'))
-pre = r'''
+source = "\n".join(line for line in source.splitlines() if not line.startswith("#include"))
+pre = r"""
 #define _POSIX_C_SOURCE 200809L
 #include "rmb/service.h"
 #include <assert.h>
@@ -58,10 +59,10 @@ bool module_runtime_code_pointer(const void *p) {return p!=NULL && code_allowed;
 bool module_runtime_ready(void) {return true;}
 bool authenticated(const char *s) {return s && !strcmp(s,"native-public-token");}
 void rmb_network_init_abort(void);
-'''
-service = (ROOT/'esp32_rom/main/service.c').read_text()
-pre += service[service.index('bool socket_exact('):service.index('bool reply(')]
-post = r'''
+"""
+service = (ROOT / "esp32_rom/main/service.c").read_text()
+pre += service[service.index("bool socket_exact(") : service.index("bool reply(")]
+post = r"""
 static void check(const char *text,size_t n,bool expected) {
  int f[2];assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));assert(write(f[0],text,n)==(ssize_t)n);shutdown(f[0],SHUT_WR);
  connection_slot slot={.fd=f[1],.flags=RMB_NET_AUTH_REPLAY};
@@ -165,9 +166,29 @@ int main(void) {
  rmb_network_init_begin();assert(atomic_load(&phase)==ABORTED);
  puts("PASS production ABI4 auth, decoded duplicate/NUL rejection, replay/consume, stale generations, binary I/O, EOF, nonblocking and exact deadlines");
 }
-'''
-with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', str(Path.home()/'tmp'))) as d:
-    p=Path(d);(p/'network.c').write_text(pre+source+post)
+"""
+with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))) as d:
+    p = Path(d)
+    (p / "network.c").write_text(pre + source + post)
     for stack_bytes in (12288, 16384):
-        subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-fsanitize=address,undefined','-fno-pie','-no-pie','-fno-sanitize-recover=all',f'-DCONFIG_RMB_LISTENER_STACK_BYTES={stack_bytes}','-I'+str(ROOT/'include'),str(p/'network.c'),'-o',str(p/'network')],check=True)
-        subprocess.run([str(p/'network')],check=True,timeout=10)
+        subprocess.run(
+            [
+                "cc",
+                "-std=c11",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-Wno-misleading-indentation",
+                "-fsanitize=address,undefined",
+                "-fno-pie",
+                "-no-pie",
+                "-fno-sanitize-recover=all",
+                f"-DCONFIG_RMB_LISTENER_STACK_BYTES={stack_bytes}",
+                "-I" + str(ROOT / "include"),
+                str(p / "network.c"),
+                "-o",
+                str(p / "network"),
+            ],
+            check=True,
+        )
+        subprocess.run([str(p / "network")], check=True, timeout=10)

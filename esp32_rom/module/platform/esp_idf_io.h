@@ -9,6 +9,7 @@
 #include "freertos/queue.h"
 #include "board_config.h"
 
+#if RMB_BUILTIN_SPI
 /* Single control-task caller; no internal ownership/mutex policy.
  * SPI functions return ESP_OK or a driver/error code. Error strings are static.
  * A failed open can own a bus: always close after attempting open, except when
@@ -30,9 +31,9 @@ typedef struct {
 } esp_io_spi_pad_result;
 void esp_io_spi_pad_snapshot_get(esp_io_spi_pad_snapshot *s);
 int esp_io_spi_pad_sample(unsigned pull, esp_io_spi_pad_result *r);
-void esp_io_spi_pad_evidence(esp_io_spi_pad_snapshot *before,
-                           esp_io_spi_pad_snapshot *during);
+void esp_io_spi_pad_evidence(esp_io_spi_pad_snapshot *before, esp_io_spi_pad_snapshot *during);
 
+#endif
 
 esp_err_t esp_io_uart_mode(unsigned baud, bool rom);
 esp_err_t esp_io_target_gpio_init(void);

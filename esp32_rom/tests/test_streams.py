@@ -1,38 +1,82 @@
 """Compile actual stream implementation/auth/ring with SDK-only shims; no hardware claims."""
+
 from pathlib import Path
 import os
+import re
 import subprocess
 import tempfile
+
+
+def at(text, literal):
+    """Locate a code anchor, tolerating formatter whitespace around tokens."""
+    pattern = re.escape(literal)
+    for token, flexible in (
+        (r"\ ", r"\s*"),
+        (",", r"\s*,\s*"),
+        (r"\(", r"\(\s*"),
+        (r"\)", r"\s*\)"),
+        (r"\{", r"\{\s*"),
+        (r"\}", r"\s*\}"),
+        (";", r"\s*;"),
+        ("=", r"\s*=\s*"),
+    ):
+        pattern = pattern.replace(token, flexible)
+    match = re.search(pattern, text)
+    if not match:
+        raise ValueError("missing anchor: " + literal)
+    return match.start()
+
+
+def flat(text):
+    """Compare C token runs without depending on formatting whitespace."""
+    return re.sub(r"\s+", "", text)
+
+
 ROOT = Path(__file__).resolve().parents[1]
 import sys
-sys.path.insert(0, str(ROOT.parent / 'tools'))
+
+sys.path.insert(0, str(ROOT.parent / "tools"))
 from native_deps import cjson
+
 CJSON = cjson()
-service = (ROOT/'main/service.c').read_text()
-business = (ROOT/'module/business.c').read_text()
-for include in ('uart_priority.inc', 'uart_framed.inc'):
-    business = business.replace('#include "'+include+'"', (ROOT/'module'/include).read_text())
+service = (ROOT / "main/service.c").read_text()
+business = (ROOT / "module/business.c").read_text()
+for include in ("uart_priority.inc", "uart_framed.inc"):
+    business = business.replace(
+        '#include "' + include + '"', (ROOT / "module" / include).read_text()
+    )
 # Device status is tested at the service boundary, not part of UART transport.
-a = business.index('static void service_status(')
-b = business.index('static bool stream_auth_ex(', a)
+a = at(business, "static void service_status(")
+b = business.index("static bool stream_auth_ex(", a)
 business = business[:a] + business[b:]
-backend = (ROOT/'module/platform/esp_idf_io.c').read_text()
-uart_mode = backend[backend.index('esp_err_t esp_io_uart_mode('):backend.index('static uint64_t pin_mask(')]
+backend = (ROOT / "module/platform/esp_idf_io.c").read_text()
+uart_mode = backend[
+    at(backend, "esp_err_t esp_io_uart_mode(") : at(backend, "static uint64_t pin_mask(")
+]
 # The resident owns logs; UART ownership/auth/framing now execute in business.
 # Rename only resident-local symbols so both real implementations can coexist.
 # Stop UART extraction before the SPI add-on: its SDK types are not UART shims.
-resident_streams = (ROOT/'main/streams.inc').read_text().split('static void stream_server(')[0]
-streams = ('''\n#define stream_auth_ex log_stream_auth_ex
+resident_streams = (ROOT / "main/streams.inc").read_text().split("static void stream_server(")[0]
+streams = (
+    """\n#define stream_auth_ex log_stream_auth_ex
 #define stream_auth log_stream_auth
 #define stream_send log_stream_send
-''' + resident_streams + '''
+"""
+    + resident_streams
+    + """
 #undef stream_auth_ex
 #undef stream_auth
 #undef stream_send
-''' + business[business.index('static esp_err_t target_uart_mode('):business.index('static uint32_t spi_test_seq=1;')])
-helpers = service[service.index('bool authenticated('):service.index('#include "streams.inc"')]
-helpers = helpers.replace('#include "module_runtime.h"', '')
-preamble = r'''
+"""
+    + business[
+        at(business, "static esp_err_t target_uart_mode(") : business.rfind(
+            "#if RMB_BUILTIN_SPI", 0, at(business, "static uint32_t spi_test_seq=1;")
+        )
+    ]
+)
+helpers = service[at(service, "bool authenticated(") : at(service, '#include "streams.inc"')]
+helpers = helpers.replace('#include "module_runtime.h"', "")
+preamble = r"""
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <pthread.h>
@@ -100,8 +144,8 @@ static int uart_write_bytes(int p,const void *d,size_t n){(void)p;assert(owner);
 static int uart_wait_tx_done(int p,int t){(void)p;(void)t;return 0;}
 static int uart_read_bytes(int p,void *d,size_t n,int t){(void)p;(void)t;assert(owner);if(atomic_exchange(&uart_inject,false)){assert(n>=5);memcpy(d,"pong\0",5);uart_inject=false;return 5;}return 0;}
 static void vTaskDelay(int t){struct timespec d={t/1000,(long)(t%1000)*1000000};nanosleep(&d,NULL);}
-'''
-tests = r'''
+"""
+tests = r"""
 static void check_auth(const char *text,bool uart,bool expected,unsigned expected_baud) {
  int f[2];assert(socketpair(AF_UNIX,SOCK_STREAM,0,f)==0);
  assert(write(f[0],text,strlen(text))==(ssize_t)strlen(text));
@@ -177,14 +221,45 @@ int main(void){
  puts("PASS actual C stream auth, malformed/duplicate/range rejection, ring overwrite/truncation, console tee, UART busy/no-side-effects/release and log disconnect");
  return 0;
 }
-'''
-with tempfile.TemporaryDirectory(prefix='v14-streams-',dir=os.environ.get('TMPDIR',str(Path.home()/'tmp'))) as tmp:
-    p=Path(tmp); (p/'test.c').write_text(preamble+uart_mode+helpers+streams+tests)
-    subprocess.run(['cc','-std=c11','-pthread','-Wall','-Wextra','-Werror','-I'+str(ROOT/'main'),'-I'+str(ROOT.parent/'include'),'-I'+str(CJSON),str(p/'test.c'),str(CJSON/'cJSON.c'),'-lm','-o',str(p/'test')],check=True)
-    subprocess.run([str(p/'test')],check=True,timeout=10)
+"""
+with tempfile.TemporaryDirectory(
+    prefix="v14-streams-", dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
+) as tmp:
+    p = Path(tmp)
+    (p / "test.c").write_text(preamble + uart_mode + helpers + streams + tests)
+    subprocess.run(
+        [
+            "cc",
+            "-std=c11",
+            "-pthread",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-I" + str(ROOT / "main"),
+            "-I" + str(ROOT.parent / "include"),
+            "-I" + str(CJSON),
+            str(p / "test.c"),
+            str(CJSON / "cJSON.c"),
+            "-lm",
+            "-o",
+            str(p / "test"),
+        ],
+        check=True,
+    )
+    subprocess.run([str(p / "test")], check=True, timeout=10)
 # Ownership before staging upload and target side effects; status remains independent.
-assert business.index('control_acquire()',business.index('/* Only ESP staging')) < business.index('esp_partition_erase_range') < business.index('"Staging upload start')
-status=business[business.index('if (!strcmp(op->valuestring, "status"))'):business.index('if (!strcmp(op->valuestring, "restart"))')]
-assert 'xSemaphore' not in status and 'target_' not in status
-assert 'target_uart_mode(115200,true)' in business and 'target_uart_mode(115200,false)' in business
-print('PASS structural control/staging ownership and ROM/APP mode restoration')
+assert (
+    business.index("control_acquire()", at(business, "/* Only ESP staging"))
+    < at(business, "esp_partition_erase_range")
+    < at(business, '"Staging upload start')
+)
+status = business[
+    at(business, 'if (!strcmp(op->valuestring, "status"))') : at(
+        business, 'if (!strcmp(op->valuestring, "restart"))'
+    )
+]
+assert "xSemaphore" not in status and "target_" not in status
+assert flat("target_uart_mode(115200,true)") in flat(business) and flat(
+    "target_uart_mode(115200,false)"
+) in flat(business)
+print("PASS structural control/staging ownership and ROM/APP mode restoration")

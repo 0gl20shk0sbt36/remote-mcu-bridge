@@ -4,11 +4,21 @@
 #include "sdkconfig.h"
 #include "driver/uart.h"
 
+/* Build-owned feature, never inferred from resident sdkconfig. */
+#ifndef RMB_BUILTIN_SPI
+#define RMB_BUILTIN_SPI 0
+#endif
+#if RMB_BUILTIN_SPI != 0 && RMB_BUILTIN_SPI != 1
+#error "RMB_BUILTIN_SPI must be 0 or 1"
+#endif
+
 /* Fixed wiring of this ESP32-C3 board, not a portable HAL configuration. */
+#if RMB_BUILTIN_SPI
 #define BOARD_SPI_SCLK 7
 #define BOARD_SPI_MOSI 1
 #define BOARD_SPI_MISO 0
 #define BOARD_SPI_CS 10
+#endif
 #define BOARD_UART_TX 3
 #define BOARD_UART_RX 4
 #define BOARD_BOOT0 5

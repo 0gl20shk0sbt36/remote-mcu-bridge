@@ -4,6 +4,7 @@
 Only clocks, operation feeds and platform scheduling are shimmed. Base and
 network paths use real localhost socketpairs; this is not MCU timing proof.
 """
+
 import ast
 import os
 from pathlib import Path
@@ -12,15 +13,22 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-fixture = ast.parse((ROOT/'esp32_rom/tests/test_generic_network.py').read_text())
-pre = next(node.value.value for node in fixture.body
-           if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
-           and any(isinstance(t, ast.Name) and t.id == 'pre' for t in node.targets))
+fixture = ast.parse((ROOT / "esp32_rom/tests/test_generic_network.py").read_text())
+pre = next(
+    node.value.value
+    for node in fixture.body
+    if isinstance(node, ast.Assign)
+    and isinstance(node.value, ast.Constant)
+    and any(isinstance(t, ast.Name) and t.id == "pre" for t in node.targets)
+)
 assert isinstance(pre, str)
-pre, count = re.subn(r'static int64_t esp_timer_get_time\(void\) \{[^\n]*\}',
-                    'static int64_t fake_time=1;\nstatic int64_t esp_timer_get_time(void) {return fake_time;}', pre)
+pre, count = re.subn(
+    r"static int64_t esp_timer_get_time\(void\) \{[^\n]*\}",
+    "static int64_t fake_time=1;\nstatic int64_t esp_timer_get_time(void) {return fake_time;}",
+    pre,
+)
 assert count == 1
-wrappers = r'''
+wrappers = r"""
 static int64_t final_io_time=-1,copy_time=-1;
 static ssize_t timed_recv(int fd,void *p,size_t n,int flags) {
  ssize_t result=recv(fd,p,n,flags);
@@ -38,12 +46,12 @@ static void *timed_copy(void *d,const void *s,size_t n) {
 #define recv timed_recv
 #define send timed_send
 #define memcpy timed_copy
-'''
-base = (ROOT/'esp32_rom/main/service.c').read_text()
-base = base[base.index('bool socket_exact('):base.index('bool reply(')]
-network = (ROOT/'esp32_rom/main/generic_network.c').read_text()
-network = '\n'.join(line for line in network.splitlines() if not line.startswith('#include'))
-module_shims = r'''
+"""
+base = (ROOT / "esp32_rom/main/service.c").read_text()
+base = base[base.index("bool socket_exact(") : base.index("bool reply(")]
+network = (ROOT / "esp32_rom/main/generic_network.c").read_text()
+network = "\n".join(line for line in network.splitlines() if not line.startswith("#include"))
+module_shims = r"""
 static const rmb_host *host,*sdk;
 static void service_io_progress(void) {}
 static bool active_progress(int lease,uint32_t checkpoint) {(void)lease;(void)checkpoint;return true;}
@@ -60,14 +68,14 @@ static int module_write(rmb_connection h,const void *p,size_t n,bool nonblocking
  if(final_io_time>=0)fake_time=final_io_time;
  return 1;
 }
-'''
-stm = (ROOT/'esp32_rom/module/service_net.h').read_text()
-stm = stm[stm.index('static bool socket_exact('):stm.index('static bool authenticated(')]
-stm = stm.replace('socket_exact(', 'stm_exact(', 1)
-hello = (ROOT/'examples/services/hello/service.c').read_text()
-hello = hello[hello.index('static bool socket_exact('):hello.index('static bool reply(')]
-hello = hello.replace('socket_exact(', 'hello_exact(', 1)
-post = r'''
+"""
+stm = (ROOT / "esp32_rom/module/service_net.h").read_text()
+stm = stm[stm.index("static bool socket_exact(") : stm.index("static bool authenticated(")]
+stm = stm.replace("socket_exact(", "stm_exact(", 1)
+hello = (ROOT / "examples/services/hello/service.c").read_text()
+hello = hello[hello.index("static bool socket_exact(") : hello.index("static bool reply(")]
+hello = hello.replace("socket_exact(", "hello_exact(", 1)
+post = r"""
 int main(void) {
  for(unsigned layer=0;layer<2;layer++)for(unsigned writing=0;writing<2;writing++)
   for(int64_t finished=999;finished<=1001;finished++) {
@@ -101,11 +109,31 @@ int main(void) {
  assert(!stm_exact(77,NULL,0,false,1000));assert(!hello_exact(77,NULL,0,false,1000,1));
  puts("PASS actual base/network/STM/hello final-byte deadlines: before accepted, equality/late rejected for read/write/replay");
 }
-'''
-with tempfile.TemporaryDirectory(prefix='rmb-exact-deadline-', dir=os.environ.get('TMPDIR', str(Path.home()/'tmp'))) as work:
+"""
+with tempfile.TemporaryDirectory(
+    prefix="rmb-exact-deadline-", dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
+) as work:
     path = Path(work)
-    (path/'deadline.c').write_text(pre+wrappers+base+network+module_shims+stm+hello+post)
-    subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-Wno-misleading-indentation',
-                    '-fsanitize=address,undefined','-fno-pie','-no-pie','-fno-sanitize-recover=all',
-                    '-I'+str(ROOT/'include'),str(path/'deadline.c'),'-o',str(path/'deadline')], check=True)
-    subprocess.run([str(path/'deadline')], check=True, timeout=10)
+    (path / "deadline.c").write_text(
+        pre + wrappers + base + network + module_shims + stm + hello + post
+    )
+    subprocess.run(
+        [
+            "cc",
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-misleading-indentation",
+            "-fsanitize=address,undefined",
+            "-fno-pie",
+            "-no-pie",
+            "-fno-sanitize-recover=all",
+            "-I" + str(ROOT / "include"),
+            str(path / "deadline.c"),
+            "-o",
+            str(path / "deadline"),
+        ],
+        check=True,
+    )
+    subprocess.run([str(path / "deadline")], check=True, timeout=10)

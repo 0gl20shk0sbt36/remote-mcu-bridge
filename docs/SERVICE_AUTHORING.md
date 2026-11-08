@@ -1,5 +1,7 @@
 # 新业务模块编写 / Service authoring — ABI 4
 
+操作步骤请先看 [服务编写与部署手册](USER_GUIDE.md)；维护入口见 [开发手册](DEVELOPMENT.md)，默认 STM 业务见 [STM ROM/UART 手册](DEFAULT_STM_FIRMWARE.md)。本页保留 SDK 深入合同和历史证据，不是一步安装脚本。
+
 ## 范围与证据
 
 本页描述 ABI4 契约；构建/原生验证不等于硬件验收。2026-11-08 的独立 ABI4 验收见 [实机记录](validation/abi4-hardware-20261108.md)。ABI3 的历史结果单列于文末，不混作 ABI4 证据。ABI4 故意拒绝 ABI3 二进制，必须针对准确的新基座 ELF 重建。

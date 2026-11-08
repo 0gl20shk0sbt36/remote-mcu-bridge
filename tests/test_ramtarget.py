@@ -104,8 +104,12 @@ check("vtor sram macro", "VECT_TAB_SRAM" in defs and "USER_VECT_TAB_ADDRESS" in 
 # --------------------------------------------------------------------------- #
 devices = rt.load_devices()
 check("device present", "STM32F407ZGT6" in devices)
-check("inheritance merged", devices["STM32F405ZGT6"]["sram_exec"] == devices["STM32F407ZGT6"]["sram_exec"])
+check(
+    "inheritance merged",
+    devices["STM32F405ZGT6"]["sram_exec"] == devices["STM32F407ZGT6"]["sram_exec"],
+)
 check("inherited reserve", devices["STM32F405ZGT6"]["rom_reserve_bytes"] == 16384)
+
 
 # --------------------------------------------------------------------------- #
 # image verification
@@ -121,7 +125,11 @@ import os
 tmp = pathlib.Path(tempfile.mkdtemp(prefix="ramtarget-test-"))
 img = tmp / "ok.bin"
 img.write_bytes(make_image(0x20010000, 0x20002001))
-check("good ram image accepted", rt.verify_image(img, "ram", GENERIC_DEVICE) == [], str(rt.verify_image(img, "ram", GENERIC_DEVICE)))
+check(
+    "good ram image accepted",
+    rt.verify_image(img, "ram", GENERIC_DEVICE) == [],
+    str(rt.verify_image(img, "ram", GENERIC_DEVICE)),
+)
 
 img.write_bytes(make_image(0x20010000, 0x08000001))
 check("flash image rejected as ram", bool(rt.verify_image(img, "ram", GENERIC_DEVICE)))
@@ -161,8 +169,12 @@ check("f103 window 19K", meta3["length"] == 20 * 1024 - 1024, str(meta3["length"
 check("f103 vector assert", "ASSERT(ORIGIN(RAM) == 0x20000400" in out3)
 f1img = tmp / "f1.bin"
 f1img.write_bytes(make_image(0x20004000, 0x20000409))
-check("f103 ram image accepted", rt.verify_image(f1img, "ram", f1) == [], str(rt.verify_image(f1img, "ram", f1)))
-f1img.write_bytes(make_image(0x20020000, 0x20000409))   # F407-sized stack on an F103
+check(
+    "f103 ram image accepted",
+    rt.verify_image(f1img, "ram", f1) == [],
+    str(rt.verify_image(f1img, "ram", f1)),
+)
+f1img.write_bytes(make_image(0x20020000, 0x20000409))  # F407-sized stack on an F103
 check("f103 rejects f407 stack", bool(rt.verify_image(f1img, "ram", f1)))
 
 for f in tmp.iterdir():

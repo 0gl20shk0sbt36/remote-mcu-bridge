@@ -4,9 +4,10 @@ Uses the real supervisor, runtime, update core, cJSON and SHA-256; only native
 platform/entry seams are supplied by test_supervisor_startup. No UART ownership
 or obsolete ROM request scaffolding is part of the generic resident ABI.
 """
+
 from test_supervisor_startup import build_run
 
-POST = r'''
+POST = r"""
 static char result[4096],upload[256];
 static uint8_t body[76],digest[32];
 static void run(const char *text,const void *payload,size_t n) {
@@ -98,7 +99,7 @@ int main(void) {
  busy=false;run(upload,body,sizeof body);assert(strstr(result,"enter-update")&&body_writes==old_writes);
  puts("PASS production ABI4 management + runtime: strict auth/fields/seq, immutable boot latch, real SHA/binding/footer commit, no hot activation, binary upload abort cleanup, busy-worker footer retry before restart");
 }
-'''
+"""
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     build_run(POST)

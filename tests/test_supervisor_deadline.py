@@ -1,16 +1,29 @@
 #!/usr/bin/env python3
 """Execute real worker/monitor + RTC journal with deterministic platform seams."""
+
 from pathlib import Path
 import os
 import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-supervisor = (ROOT/'esp32_rom/main/supervisor.inc').read_text()
-types = supervisor[supervisor.index('typedef rmb_supervisor_record'):supervisor.index('static void supervisor_record_write_locked(')]
-worker = supervisor[supervisor.index('static void supervisor_record_write_locked('):supervisor.index('static int supervisor_submit(')]
-monitor = supervisor[supervisor.index('static void supervisor_monitor('):supervisor.index('static void supervisor_init(')]
-preamble = r'''
+supervisor = (ROOT / "esp32_rom/main/supervisor.inc").read_text()
+types = supervisor[
+    supervisor.index("typedef rmb_supervisor_record") : supervisor.index(
+        "static void supervisor_record_write_locked("
+    )
+]
+worker = supervisor[
+    supervisor.index("static void supervisor_record_write_locked(") : supervisor.index(
+        "static int supervisor_submit("
+    )
+]
+monitor = supervisor[
+    supervisor.index("static void supervisor_monitor(") : supervisor.index(
+        "static void supervisor_init("
+    )
+]
+preamble = r"""
 #define _POSIX_C_SOURCE 200809L
 #include <stdint.h>
 #include <stddef.h>
@@ -53,8 +66,8 @@ static int esp_task_wdt_reset(void) {return 0;}
 static void xSemaphoreGive(int s) {assert(s==1);notifications++;}
 static void vTaskDelay(unsigned n) {(void)n;longjmp(finished_trap,1);}
 static void reply(int fd,const char *s) {(void)fd;strcpy(response,s);}
-'''
-platform = r'''
+"""
+platform = r"""
 static supervisor_job *pending;
 static int xQueueReceive(int queue,supervisor_job **out,int ticks) {
  (void)queue;(void)ticks;
@@ -66,8 +79,8 @@ static int module_runtime_init(void) {
  assert(service_watchdog_open("entry-root",60000)>0);
  clock_us+=init_delay;return init_result;
 }
-'''
-post = r'''
+"""
+post = r"""
 static void fresh(void) {
  memset(&lease_rtc,0,sizeof lease_rtc);clock_us=1;resets=notifications=0;reset_reason=1;
  service_watchdog_boot();supervisor_worker_handle=1;supervisor_queue=1;
@@ -104,12 +117,36 @@ int main(void) {
  assert(!lock_depth);
  puts("PASS real worker completion deadline, no late success/notification, init failure and monitor persist sequence-aware RTC reports");
 }
-'''
-with tempfile.TemporaryDirectory(prefix='rmb-supervisor-deadline-', dir=os.environ.get('TMPDIR', str(Path.home()/'tmp'))) as work:
+"""
+with tempfile.TemporaryDirectory(
+    prefix="rmb-supervisor-deadline-", dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
+) as work:
     path = Path(work)
-    journal = (ROOT/'esp32_rom/main/service_watchdog.inc').read_text()
-    (path/'deadline.c').write_text(preamble+types+journal+platform+worker+monitor+post)
-    subprocess.run(['cc','-std=c11','-O1','-g','-Wall','-Wextra','-Werror','-Wno-unused-function','-Wno-unused-variable',
-                    '-fsanitize=address,undefined','-fno-pie','-no-pie','-fno-sanitize-recover=all',
-                    '-I'+str(ROOT/'include'),str(path/'deadline.c'),str(ROOT/'core/supervisor.c'),'-o',str(path/'deadline')], check=True)
-    subprocess.run([str(path/'deadline')], check=True, timeout=10)
+    journal = (ROOT / "esp32_rom/main/service_watchdog.inc").read_text()
+    (path / "deadline.c").write_text(
+        preamble + types + journal + platform + worker + monitor + post
+    )
+    subprocess.run(
+        [
+            "cc",
+            "-std=c11",
+            "-O1",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-Wno-unused-function",
+            "-Wno-unused-variable",
+            "-fsanitize=address,undefined",
+            "-fno-pie",
+            "-no-pie",
+            "-fno-sanitize-recover=all",
+            "-I" + str(ROOT / "include"),
+            str(path / "deadline.c"),
+            str(ROOT / "core/supervisor.c"),
+            "-o",
+            str(path / "deadline"),
+        ],
+        check=True,
+    )
+    subprocess.run([str(path / "deadline")], check=True, timeout=10)

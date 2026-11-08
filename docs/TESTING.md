@@ -22,6 +22,15 @@
 - 本轮**没有改写 STM Flash**；没有实测擦写中突然断电，RTC 不保证断电保留，未验证其他板或 cache-off 自定义 ISR。GitHub 发布与远程 CI 仍暂停。
 - [独立实机报告](validation/abi4-hardware-20261108.md) / [脱敏结构化证据](validation/abi4-hardware-20261108.json)。生产凭据、镜像和原始串口/Wi-Fi 日志保持私有。
 
+### 代码整理与默认服务分离（2026-11-08，本地）
+
+- 统一格式：LLVM 风格 C/C++（4 空格、100 列）、Ruff Python（100 列），由 `tools/format_code.py` 只处理自有源码，不碰 SDK/依赖/构建产物；工具版本在 `tools/format-requirements.txt` 固定，安装在隔离虚拟环境。
+- 格式变化后，原先依赖逐字空白的源码契约测试改为分隔符容忍的锚点（`at()`）与 token 归一化比较（`flat()`），安全性质未放宽；完整 CTest **29/29** 通过（新增 CLI 令牌文件测试）。
+- 删除两份无构建/测试依赖的 ABI3 遗留 `esp32_rom/main/uart_{priority,framed}.inc`；现役实现只有 `esp32_rom/module/` 下的副本。
+- 默认内置服务改为 **`stm-uart`（无 SPI）**：默认构建只含 UART 驱动、无 SPI handler/诊断/GP-SPI 驱动；SPI 仅在显式 `--builtin-service stm-spi` 时编入。与 `--module-manifest` 互斥。
+- 对同一启用版底座真实交叉链接：`stm-uart` 镜像 52,820 B、5 个源文件、链接库不含 SPI、镜像内无 `spi-test`/`spi-pad-sample`/`pad_scope` 等标记；`stm-spi` 85,748 B、6 个源文件。两者均无未解析符号，合成取指地址下 **NOT DEPLOYABLE**。
+- 本轮未烧录、未改 STM Flash、未做新实机验证；默认服务是否可用仍以既有 ABI4 实机记录为准，SPI 历史 600 次结果为可选服务记录。
+
 ### 历史 ABI3 本地执行结果（2026-11-07）
 
 - 整理后的源码正本：**22/22 CTest 通过**，包含原工程适用测试、注册表、客户端、发现、probe、SPI 原始数据/采样接口及最小服务 A/B 的原生检查。最后完整运行在新增深度诊断与服务清单支持后执行。
@@ -84,6 +93,15 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 - Two rounds of 100 transactions at each of 100 kHz, 500 kHz and 1 MHz passed: 600 bidirectional 64-byte transactions, both receivers verified, zero mismatched bytes. This does not establish the cause of the historical ABI3 all-FF incident.
 - STM Flash was not rewritten in this session. Physical mid-write power loss, other boards, complete-power-loss RTC retention and custom cache-off ISRs remain untested. Publication and remote CI remain paused.
 - See the [hardware report](validation/abi4-hardware-20261108.md) and [sanitized JSON evidence](validation/abi4-hardware-20261108.json). Production credentials/images and raw serial/Wi-Fi logs remain private.
+
+### Code organisation and default-service split (2026-11-08, local)
+
+- One formatter contract: LLVM-style C/C++ (four spaces, 100 columns) and Ruff Python (100 columns), applied only to owned sources by `tools/format_code.py`, never SDK/dependency/build output. Tool versions are pinned in `tools/format-requirements.txt` and installed in an isolated virtual environment.
+- Source-contract fixtures that previously depended on exact whitespace now use delimiter-tolerant anchors (`at()`) and token-normalised comparison (`flat()`); no safety property was relaxed. Full CTest: **29/29** (new CLI token-file suite included).
+- Removed two ABI3 leftovers with no build or test dependency: `esp32_rom/main/uart_{priority,framed}.inc`. The live implementations are the `esp32_rom/module/` copies.
+- The built-in default is now **`stm-uart` (no SPI)**: only the UART driver is compiled, with no SPI handlers, diagnostics or GP-SPI driver. SPI requires an explicit `--builtin-service stm-spi` and is mutually exclusive with `--module-manifest`.
+- Real cross-links against the same enabled resident: `stm-uart` is 52,820 B from five sources, links no SPI archive and contains no `spi-test`/`spi-pad-sample`/`pad_scope` markers; `stm-spi` is 85,748 B from six sources. Both have no undefined symbols and are **NOT DEPLOYABLE** at the synthetic text address.
+- No flashing, no STM Flash write and no new hardware claim in this round; default-service behaviour still rests on the existing ABI4 hardware record, and the historical 600-transfer SPI measurement belongs to the optional service.
 
 ### Historical ABI3 local results (2026-11-07)
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compile and run the actual resident watchdog with native platform shims."""
+
 import os
 from pathlib import Path
 import subprocess
@@ -14,17 +15,31 @@ class ProductionWatchdog(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="rmb-watchdog-") as build:
             binary = Path(build) / "watchdog-native"
             command = [
-                os.environ.get("CC", "cc"), "-std=c11", "-g", "-O1",
-                "-Wall", "-Wextra", "-Werror", "-fno-omit-frame-pointer",
-                "-fsanitize=address,undefined", "-fno-pie", "-no-pie",
-                str(ROOT / "tests/watchdog_native.c"), "-o", str(binary),
+                os.environ.get("CC", "cc"),
+                "-std=c11",
+                "-g",
+                "-O1",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-fno-omit-frame-pointer",
+                "-fsanitize=address,undefined",
+                "-fno-pie",
+                "-no-pie",
+                str(ROOT / "tests/watchdog_native.c"),
+                "-o",
+                str(binary),
             ]
             compiled = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
-            env = dict(os.environ, ASAN_OPTIONS="detect_leaks=1:abort_on_error=1",
-                       UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1")
-            result = subprocess.run([str(binary)], capture_output=True, text=True, env=env,
-                                    timeout=30)
+            env = dict(
+                os.environ,
+                ASAN_OPTIONS="detect_leaks=1:abort_on_error=1",
+                UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1",
+            )
+            result = subprocess.run(
+                [str(binary)], capture_output=True, text=True, env=env, timeout=30
+            )
             print(result.stdout, end="")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("ALL production watchdog tests passed", result.stdout)

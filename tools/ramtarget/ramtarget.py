@@ -119,7 +119,6 @@ def detect_device(project: pathlib.Path) -> str | None:
     return None
 
 
-
 def patch_vtor_guard(project: pathlib.Path, device: dict) -> str | None:
     """Let the build override VECT_TAB_OFFSET through -D.
 
@@ -138,15 +137,19 @@ def patch_vtor_guard(project: pathlib.Path, device: dict) -> str | None:
     src = path.read_text()
     if "#if !defined(VECT_TAB_OFFSET)" in src:
         return f"{rel} (already guarded)"
-    pattern = re.compile(
-        r"(?P<define>#define\s+VECT_TAB_OFFSET\s+0x0+U\s*/\*!<[^*]*?\*/)"
-    )
+    pattern = re.compile(r"(?P<define>#define\s+VECT_TAB_OFFSET\s+0x0+U\s*/\*!<[^*]*?\*/)")
     matches = pattern.findall(src)
     if not matches:
-        raise SystemExit(f"error: no unguarded VECT_TAB_OFFSET in {rel}; "
-                         "check whether the vendor template changed")
-    out = pattern.sub(lambda m: '#if !defined(VECT_TAB_OFFSET)\n' + m.group('define')
-                      + '\n#endif /* VECT_TAB_OFFSET */', src)
+        raise SystemExit(
+            f"error: no unguarded VECT_TAB_OFFSET in {rel}; "
+            "check whether the vendor template changed"
+        )
+    out = pattern.sub(
+        lambda m: (
+            "#if !defined(VECT_TAB_OFFSET)\n" + m.group("define") + "\n#endif /* VECT_TAB_OFFSET */"
+        ),
+        src,
+    )
     path.write_text(out)
     return f"{rel} ({len(matches)} definition(s) guarded)"
 
@@ -220,8 +223,8 @@ def build_ram_script(src: str, device: dict, reserve: int | None = None) -> tupl
         f" */\n"
     )
     assertions = (
-        f"\nASSERT(ORIGIN({exec_name}) == 0x{base:08x}, \"RAM image base mismatch\")\n"
-        f"ASSERT((ORIGIN({exec_name}) % {align}) == 0, \"vector table alignment\")\n"
+        f'\nASSERT(ORIGIN({exec_name}) == 0x{base:08x}, "RAM image base mismatch")\n'
+        f'ASSERT((ORIGIN({exec_name}) % {align}) == 0, "vector table alignment")\n'
         f"_ram_image_base = ORIGIN({exec_name});\n"
         f"_ram_image_limit = ORIGIN({exec_name}) + LENGTH({exec_name});\n"
     )
@@ -292,8 +295,15 @@ add_custom_command(TARGET ${{CMAKE_PROJECT_NAME}} POST_BUILD
 """
 
 
-def emit_cmake(device_name: str, device: dict, meta: dict, generator: pathlib.Path,
-               flash_ld_name: str, ram_ld_name: str, default_target: str = "flash") -> str:
+def emit_cmake(
+    device_name: str,
+    device: dict,
+    meta: dict,
+    generator: pathlib.Path,
+    flash_ld_name: str,
+    ram_ld_name: str,
+    default_target: str = "flash",
+) -> str:
     defines = vtor_defines(device, meta)
     defines_main = "\n".join(f"        {d}" for d in defines) or "        # (none required)"
     kernel_libs = device.get("kernel_object_libs") or []
@@ -303,7 +313,9 @@ def emit_cmake(device_name: str, device: dict, meta: dict, generator: pathlib.Pa
             lines.append(f"    # {lib} compiles vendor startup/clock code out of tree,")
             lines.append(f"    # so it needs the same vector-table macros.")
             lines.append(f"    if(NOT TARGET {lib})")
-            lines.append(f'        message(FATAL_ERROR "{lib} target missing: cannot relocate VTOR")')
+            lines.append(
+                f'        message(FATAL_ERROR "{lib} target missing: cannot relocate VTOR")'
+            )
             lines.append("    endif()")
             lines.append(f"    target_compile_definitions({lib} PRIVATE")
             lines.extend(f"        {d}" for d in defines)
@@ -340,7 +352,9 @@ def verify_image(path: pathlib.Path, target: str, device: dict) -> list[str]:
     data = path.read_bytes()
     if target == "ram":
         base = int(device["sram_exec"][0]["origin"], 0) + int(device["rom_reserve_bytes"])
-        limit = int(device["sram_exec"][0]["origin"], 0) + parse_size(device["sram_exec"][0]["length"])
+        limit = int(device["sram_exec"][0]["origin"], 0) + parse_size(
+            device["sram_exec"][0]["length"]
+        )
     else:
         base = int(device["flash"]["origin"], 0)
         limit = base + parse_size(device["flash"]["length"])
@@ -375,8 +389,10 @@ def verify_image(path: pathlib.Path, target: str, device: dict) -> list[str]:
 def cmd_devices(args) -> int:
     for name, dev in sorted(load_devices().items()):
         exec_r = ", ".join(f"{r['name']} {r['origin']}+{r['length']}" for r in dev["sram_exec"])
-        print(f"{name:20} flash {dev['flash']['origin']}+{dev['flash']['length']:8} "
-              f"exec [{exec_r}] reserve {dev['rom_reserve_bytes']} align {dev['vector_align']}")
+        print(
+            f"{name:20} flash {dev['flash']['origin']}+{dev['flash']['length']:8} "
+            f"exec [{exec_r}] reserve {dev['rom_reserve_bytes']} align {dev['vector_align']}"
+        )
     return 0
 
 
@@ -411,12 +427,23 @@ def cmd_gen(args) -> int:
     cmake_dir = project / "cmake"
     cmake_dir.mkdir(exist_ok=True)
     include = cmake_dir / "ram-target.cmake"
-    include.write_text(emit_cmake(device_name, device, meta, pathlib.Path(__file__).resolve(),
-                                  flash_ld.name, ram_ld.name, args.default_target))
+    include.write_text(
+        emit_cmake(
+            device_name,
+            device,
+            meta,
+            pathlib.Path(__file__).resolve(),
+            flash_ld.name,
+            ram_ld.name,
+            args.default_target,
+        )
+    )
 
     print(f"device      {device_name}")
-    print(f"ram script  {ram_ld.relative_to(project)}  base=0x{meta['base']:08x} "
-          f"window={meta['length']} reserve=0x{meta['reserve']:x} align={meta['align']}")
+    print(
+        f"ram script  {ram_ld.relative_to(project)}  base=0x{meta['base']:08x} "
+        f"window={meta['length']} reserve=0x{meta['reserve']:x} align={meta['align']}"
+    )
     print(f"cmake       {include.relative_to(project)} (default APP_TARGET={args.default_target})")
     print(f"next        add this line after add_subdirectory(...) in CMakeLists.txt:")
     print(f"              include(cmake/ram-target.cmake)")
@@ -436,7 +463,9 @@ def cmd_verify(args) -> int:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("devices", help="list supported devices")
@@ -445,7 +474,10 @@ def main(argv=None) -> int:
     p = sub.add_parser("gen", help="generate the RAM linker script and CMake include")
     p.add_argument("project")
     p.add_argument("--device", help="part number (default: Mcu.CPN from the .ioc)")
-    p.add_argument("--reserve", help="bytes reserved at the start of executable SRAM (default: from devices.json)")
+    p.add_argument(
+        "--reserve",
+        help="bytes reserved at the start of executable SRAM (default: from devices.json)",
+    )
     p.add_argument("--default-target", choices=("flash", "ram"), default="flash")
     p.set_defaults(func=cmd_gen)
 

@@ -13,3 +13,5 @@
 *.pem
 *.key
 .env
+/.venv*/
+/.ruff_cache/

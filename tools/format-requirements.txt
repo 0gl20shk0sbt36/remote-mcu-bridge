@@ -1,0 +1,3 @@
+# Isolated development environment; not required by runtime CLI users.
+clang-format==23.1.5
+ruff==0.17.4

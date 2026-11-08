@@ -6,12 +6,12 @@
 #include <stdio.h>
 #include <string.h>
 
-int main(void)
-{
+int main(void) {
     assert(rmb_supervisor_crc32("123456789", 9) == UINT32_C(0xcbf43926));
     assert(rmb_supervisor_crc32(NULL, 0) == 0);
     uint8_t bytes[257];
-    for (unsigned i = 0; i < sizeof bytes; ++i) bytes[i] = (uint8_t)i;
+    for (unsigned i = 0; i < sizeof bytes; ++i)
+        bytes[i] = (uint8_t)i;
     for (unsigned i = 0; i <= sizeof bytes; ++i)
         assert(rmb_supervisor_crc32(bytes, i) == rom_crc32(bytes, i));
     rmb_supervisor_record record = {0};
@@ -57,5 +57,6 @@ int main(void)
     rmb_supervisor_entry_submitted(&entry);
     rmb_supervisor_entry_capture(&entry, true);
     assert(entry.submitted && !rmb_supervisor_entry_can_start(&entry));
-    puts("PASS portable supervisor: legacy CRC/RTC ABI, corruption, boot fault, deadline edges, one-shot boot permission");
+    puts("PASS portable supervisor: legacy CRC/RTC ABI, corruption, boot fault, deadline edges, "
+         "one-shot boot permission");
 }

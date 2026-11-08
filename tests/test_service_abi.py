@@ -1,4 +1,5 @@
 """ABI4 SDK compilation and production architectural boundaries; no hardware claims."""
+
 from pathlib import Path
 import os
 import re
@@ -11,10 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ServiceABI(unittest.TestCase):
     def test_sdk_standalone(self):
-        header = (ROOT / 'include/rmb/service.h').read_text()
+        header = (ROOT / "include/rmb/service.h").read_text()
         includes = re.findall(r'^\s*#\s*include\s*[<"]([^>"]+)', header, re.M)
-        self.assertTrue(set(includes) <= {'stdint.h', 'stddef.h', 'stdbool.h'}, includes)
-        source = r'''
+        self.assertTrue(set(includes) <= {"stdint.h", "stddef.h", "stdbool.h"}, includes)
+        source = r"""
 #include "rmb/service.h"
 #include <assert.h>
 _Static_assert(RMB_SERVICE_ABI == 4u, "ABI4");
@@ -47,36 +48,59 @@ int main(void) {
  const rmb_host host={4,sizeof(rmb_host),&net,now,progress,run,watch_open,watch_feed,watch_close};
  module_entry_fn fn=entry;assert(fn(&host)==17);assert(host.watchdog_open("root",100)==7);assert(!host.watchdog_feed(7,1));assert(!host.watchdog_close(7));return 0;
 }
-'''
-        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR', str(Path.home() / 'tmp'))) as d:
+"""
+        with tempfile.TemporaryDirectory(
+            dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
+        ) as d:
             p = Path(d)
-            (p / 'sdk.c').write_text(source)
-            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic',
-                            '-I'+str(ROOT/'include'), str(p/'sdk.c'), '-o', str(p/'sdk')], check=True)
-            subprocess.run([str(p/'sdk')], check=True)
+            (p / "sdk.c").write_text(source)
+            subprocess.run(
+                [
+                    "cc",
+                    "-std=c11",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-pedantic",
+                    "-I" + str(ROOT / "include"),
+                    str(p / "sdk.c"),
+                    "-o",
+                    str(p / "sdk"),
+                ],
+                check=True,
+            )
+            subprocess.run([str(p / "sdk")], check=True)
 
     def test_resident_has_no_target_dependencies(self):
-        files = list((ROOT/'esp32_rom/main').glob('*.c')) + list((ROOT/'esp32_rom/main').glob('*.h')) + list((ROOT/'esp32_rom/main').glob('*.inc'))
-        forbidden = re.compile(r'\b(?:rom_device|rom_io|rom_source|rom_probe_result|module_ops|module_rom_\w+|module_runtime_dispatch|SJ_VALIDATE|SJ_DOWNLOAD|SJ_PROBE|SJ_RESTART|CONFIG_ROM_SERVICE_DEVICE_\w+|BOOT0|NRST)\b|["<]rom\.h[">]|"staging"')
+        files = (
+            list((ROOT / "esp32_rom/main").glob("*.c"))
+            + list((ROOT / "esp32_rom/main").glob("*.h"))
+            + list((ROOT / "esp32_rom/main").glob("*.inc"))
+        )
+        forbidden = re.compile(
+            r'\b(?:rom_device|rom_io|rom_source|rom_probe_result|module_ops|module_rom_\w+|module_runtime_dispatch|SJ_VALIDATE|SJ_DOWNLOAD|SJ_PROBE|SJ_RESTART|CONFIG_ROM_SERVICE_DEVICE_\w+|BOOT0|NRST)\b|["<]rom\.h[">]|"staging"'
+        )
         for path in files:
             # Comments cannot create compiled dependencies.
-            text = re.sub(r'/\*.*?\*/|//[^\n]*', '', path.read_text(), flags=re.S)
+            text = re.sub(r"/\*.*?\*/|//[^\n]*", "", path.read_text(), flags=re.S)
             self.assertIsNone(forbidden.search(text), str(path))
-        cmake = (ROOT/'esp32_rom/main/CMakeLists.txt').read_text()
-        self.assertNotIn('rom/devices.c', cmake)
-        self.assertNotIn('rom/rom.c', cmake)
+        cmake = (ROOT / "esp32_rom/main/CMakeLists.txt").read_text()
+        self.assertNotIn("rom/devices.c", cmake)
+        self.assertNotIn("rom/rom.c", cmake)
 
     def test_hello_has_no_rom_or_raw_socket_imports(self):
-        files = list((ROOT/'examples/services/hello').glob('*.c'))
+        files = list((ROOT / "examples/services/hello").glob("*.c"))
         self.assertTrue(files)
         for path in files:
-            if 'test' in path.name:
+            if "test" in path.name:
                 continue
-            source = re.sub(r'/\*.*?\*/|//[^\n]*', '', path.read_text(), flags=re.S)
-            self.assertNotRegex(source, r'\b(?:module_ops|rom_io|rom_device|socket|accept|recv|send|close)\s*\(')
+            source = re.sub(r"/\*.*?\*/|//[^\n]*", "", path.read_text(), flags=re.S)
+            self.assertNotRegex(
+                source, r"\b(?:module_ops|rom_io|rom_device|socket|accept|recv|send|close)\s*\("
+            )
             self.assertNotRegex(source, r'["<](?:rom\.h|sys/socket\.h|lwip/sockets\.h)[">]')
-            self.assertNotIn('module_ops', source)
+            self.assertNotIn("module_ops", source)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
