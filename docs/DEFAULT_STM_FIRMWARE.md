@@ -6,7 +6,7 @@
 
 默认构建选择是 ESP 上的 **`stm-uart` ABI4 服务**：通过 STM32 系统 ROM 远程探测、Flash/SRAM 下载、目标复位及应用 UART 通信。它不是给 STM32 自动安装的应用，也不意味着新烧底座已带业务；请先按 [使用与部署](USER_GUIDE.md) 安装底座、构建并上传服务。省略模块选择等同 `--builtin-service stm-uart`，不含 SPI handlers、SPI 诊断逻辑或 GP-SPI 驱动。
 
-支持证据限于既有固定 ESP32-C3 ↔ STM32F103C8 bench，[ABI4 验证记录](validation/abi4-hardware-20261108.md) 描述当时结果。F407ZG 虽有算法/几何参数，不能据此声明硬件已验收。本文没有执行新的烧录或实机测试。旧 ABI4 报告中的 600 次 SPI 是显式可选服务的历史记录，不是默认能力。
+支持证据限于既有固定 ESP32-C3 ↔ STM32F103C8 bench，[ABI4 验证记录](validation/abi4-hardware.md) 描述当时结果。F407ZG 虽有算法/几何参数，不能据此声明硬件已验收。本文没有执行新的烧录或实机测试。旧 ABI4 报告中的 600 次 SPI 是显式可选服务的历史记录，不是默认能力。
 
 网络协议是明文共享令牌，仅适合隔离可信 LAN，不是 TLS，不可直接接入互联网/端口转发。不要提交本地网络配置、令牌或可能含凭据的底座/服务产物。
 
@@ -134,7 +134,7 @@ python3 tools/wifidebug.py --host "$DEVICE_IP" --token-file "$TOKEN_FILE" logs -
 
 The default is the ESP-side **stm-uart ABI4 service**: remote STM32 system-ROM probing, Flash/SRAM download, target reset and application UART. It is not an automatically installed STM application or a bundled service in a blank resident. Follow [deployment](USER_GUIDE.md) to build/upload it. Omitted selection equals `--builtin-service stm-uart`; no SPI handlers, diagnostic logic or GP-SPI driver are included.
 
-Existing hardware evidence is limited to the fixed ESP32-C3/F103C8 bench; see [ABI4 record](validation/abi4-hardware-20261108.md). F407ZG parameters are not hardware acceptance. No new hardware tests/flashing were performed for this manual. Historical 600-transaction SPI evidence belongs to explicit optional diagnostics, not default capabilities.
+Existing hardware evidence is limited to the fixed ESP32-C3/F103C8 bench; see [ABI4 record](validation/abi4-hardware.md). F407ZG parameters are not hardware acceptance. No new hardware tests/flashing were performed for this manual. Historical 600-transaction SPI evidence belongs to explicit optional diagnostics, not default capabilities.
 
 Use only an isolated trusted LAN: plaintext shared-token control is not TLS and must never be Internet-exposed/port-forwarded. Keep credentials and possibly credential-bearing artifacts private.
 

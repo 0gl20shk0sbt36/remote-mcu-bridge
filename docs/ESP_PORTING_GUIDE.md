@@ -1,6 +1,6 @@
 # ESP porting guide — ABI 4
 
-The resident is now portable behind `include/rmb/port.h`; see [Resident platform porting](RESIDENT_PLATFORM.md) for the contract and the minimum a new host implements. This guide applies the [architecture](ARCHITECTURE.md) and [base/platform boundary](BASE_PLATFORM_BOUNDARY.md) to ESP-IDF. It is a migration/verification checklist; the exact fixed-board ABI4 results and limits are in the independent [hardware report](validation/abi4-hardware-20261108.md), not a promise for other ports. Older guides describing module_ops or numbered dispatch document ABI3 interfaces and are not the ABI4 service SDK.
+The resident is now portable behind `include/rmb/port.h`; see [Resident platform porting](RESIDENT_PLATFORM.md) for the contract and the minimum a new host implements. This guide applies the [architecture](ARCHITECTURE.md) and [base/platform boundary](BASE_PLATFORM_BOUNDARY.md) to ESP-IDF. It is a migration/verification checklist; the exact fixed-board ABI4 results and limits are in the independent [hardware report](validation/abi4-hardware.md), not a promise for other ports. Older guides describing module_ops or numbered dispatch document ABI3 interfaces and are not the ABI4 service SDK.
 
 ## 1. Separate base from target service
 

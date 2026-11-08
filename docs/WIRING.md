@@ -37,7 +37,7 @@ STM32 的 **PB2 / BOOT1 必须保持低电平**，可使用板上 BOOT1 低电�
 
 配置：Mode 0（CPOL=0、CPHA=0）、MSB first、8 bit、每次 CS 选中传输 64 字节。首次重新连接从 **100 kHz** 开始；接线尽量短，避免悬空和松动。
 
-2026-11-07 已在重构后底座、独立业务模块和重新接线的设备上复测：100 kHz、500 kHz、1 MHz 各 100 次双向 64 字节校验全部通过。中途曾出现 MISO 接收全 FF，重新插紧 PA6↔GPIO0 后，在不再改软件或复位的情况下恢复；仍需留意杜邦线接触。这只是前后观察，**历史唯一根因尚未坐实，不能据此排除代码或 NSS/输出状态问题**；深入对照见 [SPI 调查](SPI_INVESTIGATION.md)。结果见 [实机记录](validation/hardware-20261107.json)。
+2026-11-07 已在重构后底座、独立业务模块和重新接线的设备上复测：100 kHz、500 kHz、1 MHz 各 100 次双向 64 字节校验全部通过。中途曾出现 MISO 接收全 FF，重新插紧 PA6↔GPIO0 后，在不再改软件或复位的情况下恢复；仍需留意杜邦线接触。这只是前后观察，**历史唯一根因尚未坐实，不能据此排除代码或 NSS/输出状态问题**；深入对照见 [SPI 调查](SPI_INVESTIGATION.md)。结果见 [实机记录](validation/hardware-abi3.json)。
 
 ### 3. 供电与恢复顺序
 
@@ -86,7 +86,7 @@ Keep all required wires: SPI diagnostics also use UART ARM / READY / DONE handsh
 | GPIO0 / MISO | ← | PA6 / MISO |
 | GPIO10 / CS | → | PA4 / active-low NSS |
 
-Use mode 0, MSB first, 8-bit words and one uninterrupted 64-byte transaction per CS assertion. Start reconnection testing at 100 kHz and keep wires short. On 2026-11-07, the refactored resident and independent business module passed 100 bidirectional 64-byte transactions at each of 100 kHz, 500 kHz and 1 MHz on the rewired hardware. An all-FF MISO reception fault disappeared after reseating PA6↔GPIO0 without further software changes or resets. This correlation does not establish the historical unique root cause or rule out software/NSS/output-state issues; see `docs/SPI_INVESTIGATION.md`. Keep connections secure; see the hardware report in `docs/validation/hardware-20261107.json`.
+Use mode 0, MSB first, 8-bit words and one uninterrupted 64-byte transaction per CS assertion. Start reconnection testing at 100 kHz and keep wires short. On 2026-11-07, the refactored resident and independent business module passed 100 bidirectional 64-byte transactions at each of 100 kHz, 500 kHz and 1 MHz on the rewired hardware. An all-FF MISO reception fault disappeared after reseating PA6↔GPIO0 without further software changes or resets. This correlation does not establish the historical unique root cause or rule out software/NSS/output-state issues; see `docs/SPI_INVESTIGATION.md`. Keep connections secure; see the hardware report in `docs/validation/hardware-abi3.json`.
 
 ### Power and recovery
 

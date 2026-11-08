@@ -14,6 +14,8 @@
 | [底座平台移植](RESIDENT_PLATFORM.md) | 端口契约 46 个函数、新平台最小实现清单、边界强制测试与 ESP-IDF 参考映射 |
 | [依赖与平台耦合分析](DEPENDENCY_ANALYSIS.md) | 实测数字：服务→底座 0 个私有符号、平台代码占比与剩余硬耦合；附可复跑脚本 `tools/analyze_dependencies.py` |
 | [贡献指南](../CONTRIBUTING.md) | 开发流程、测试和提交要求 |
+| [变更记录](../CHANGELOG.md) | 版本级变更（Keep a Changelog 格式） |
+| [验证证据索引](validation/README.md) | 稳定命名的证据快照；日期在文件内部，不在文件名 |
 | [安全政策](../SECURITY.md) | 可信网络限制、漏洞报告和部署风险 |
 | [许可证](../LICENSE) | MIT 条款与版权 |
 | `include/rmb/platform.h` | 存储与生命周期回调的权威定义 |
@@ -43,6 +45,8 @@ Recommended path: first deployment → [User guide](USER_GUIDE.md) → [Default 
 | [Resident platform porting](RESIDENT_PLATFORM.md) | The 46-function port contract, the minimum a new host implements, the enforced boundary test and the ESP-IDF reference mapping |
 | [Dependency and platform coupling](DEPENDENCY_ANALYSIS.md) | Measured: zero base-private symbols imported by a service, platform-code share, remaining hard coupling; reproducible via `tools/analyze_dependencies.py` |
 | [Contributing](../CONTRIBUTING.md) | Development workflow, tests, and submission requirements |
+| [Changelog](../CHANGELOG.md) | Versioned changes (Keep a Changelog format) |
+| [Validation evidence index](validation/README.md) | Evidence snapshots with stable names; dates live inside the files |
 | [Security policy](../SECURITY.md) | Trusted-network limits, vulnerability reporting, and deployment risks |
 | [License](../LICENSE) | MIT terms and copyright |
 | `include/rmb/platform.h` | Authoritative storage/lifecycle callback definitions |

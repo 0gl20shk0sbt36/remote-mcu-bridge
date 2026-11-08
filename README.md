@@ -7,7 +7,7 @@
 ### 状态与边界
 
 - 默认服务为 **STM ROM + UART（`stm-uart`）**，SPI 仅显式 `--builtin-service stm-spi` 构建；新底座需另装服务，不附带已部署业务。详见 [使用手册](docs/USER_GUIDE.md) 与 [默认固件手册](docs/DEFAULT_STM_FIRMWARE.md)。
-- 当前源码为 **ABI4 通用底座 + 独立服务**；STM32 擦写、探测、目标复位与 UART/SPI 属于服务，底座不含 ROM 回调。2026-11-08 已完成独立 [ABI4 实机验收](docs/validation/abi4-hardware-20261108.md)；历史 ABI3 报告仍单列，ABI3 模块不能装入 ABI4 底座。
+- 当前源码为 **ABI4 通用底座 + 独立服务**；STM32 擦写、探测、目标复位与 UART/SPI 属于服务，底座不含 ROM 回调。2026-11-08 已完成独立 [ABI4 实机验收](docs/validation/abi4-hardware.md)；历史 ABI3 报告仍单列，ABI3 模块不能装入 ABI4 底座。
 - 服务使用 `include/rmb/service.h` 的网络与监督接口，显式维护看门狗角色；故障报告可由重连客户端从管理端口读取并按序号确认。
 - 原生测试验证生产核心算法与模拟 I/O，不是可部署的第二个后端。
 - 其他平台的模板仅供移植设计使用，**不受支持、不能视为可构建或可运行的实现**。
@@ -93,6 +93,7 @@ python3 tools/module_ctl.py --help
 - [跨平台移植手册](docs/PORTING_GUIDE.md)：移植要完成什么、每项硬性要求、冻结常量、模块构建器移植与验收清单
 - [底座平台移植](docs/RESIDENT_PLATFORM.md)：底座只依赖 `include/rmb/port.h` 的 46 个函数，新平台实现这些即可；边界由 `esp32_rom/tests/test_port_boundary.py` 强制
 - [依赖与平台耦合分析](docs/DEPENDENCY_ANALYSIS.md)：实测服务→底座 0 个私有符号、平台代码占比、剩余硬耦合（`python3 tools/analyze_dependencies.py --proof …` 可复跑）
+- 打包发布：`python3 tools/make_release.py` 生成 `dist/remote-mcu-bridge-<version>.zip`（含 `MANIFEST.sha256`），只打包受版本控制的文件
 
 - [本地验证结果与边界](docs/TESTING.md) · [ABI4 重构合同](docs/ABI4_REFACTOR.md) · [看门狗与重连诊断](docs/WATCHDOG_RECOVERY.md)
 - [服务 A/B 实测与耦合评估](docs/SERVICE_AUTHORING.md) · [SPI 全 FF 深度调查](docs/SPI_INVESTIGATION.md)
@@ -109,7 +110,7 @@ A network-managed MCU bridge separating a portable update state machine and STM3
 ### Status and limits
 
 - The default service is **STM ROM + UART (`stm-uart`)**; SPI requires explicit `--builtin-service stm-spi`. A new resident requires separate service installation. See [User guide](docs/USER_GUIDE.md) and [Default firmware manual](docs/DEFAULT_STM_FIRMWARE.md).
-- Current sources use **ABI4 generic resident + independent services**. STM32 programming/probing/reset and target UART/SPI belong to the service, not resident callbacks. Independent [ABI4 hardware validation](docs/validation/abi4-hardware-20261108.md) ran on 2026-11-08; earlier ABI3 reports remain historical. ABI3 modules cannot load on ABI4.
+- Current sources use **ABI4 generic resident + independent services**. STM32 programming/probing/reset and target UART/SPI belong to the service, not resident callbacks. Independent [ABI4 hardware validation](docs/validation/abi4-hardware.md) ran on 2026-11-08; earlier ABI3 reports remain historical. ABI3 modules cannot load on ABI4.
 - Services use `include/rmb/service.h` and explicitly maintain watchdog-role leases. Authenticated reconnecting clients retrieve diagnostics and acknowledge the exact fault sequence.
 - Native tests exercise production algorithms and simulated I/O; they are not a second deployable backend.
 - Other platform templates are design scaffolding: **unsupported, not buildable or runnable implementations**.
@@ -195,6 +196,7 @@ python3 tools/module_ctl.py --help
 - [Cross-platform porting handbook](docs/PORTING_GUIDE.md): what a port must do, the requirement behind each item, frozen constants, module-builder porting and the acceptance checklist
 - [Resident platform porting](docs/RESIDENT_PLATFORM.md): the resident depends on 46 functions in `include/rmb/port.h`; a new host implements those, and `esp32_rom/tests/test_port_boundary.py` enforces the boundary
 - [Dependency and platform coupling](docs/DEPENDENCY_ANALYSIS.md): measured service→base coupling (zero private symbols), platform-code share and remaining hard coupling, reproducible with `tools/analyze_dependencies.py`
+- Release: `python3 tools/make_release.py` produces `dist/remote-mcu-bridge-<version>.zip` with a `MANIFEST.sha256`; only tracked files are packaged
 
 - [Local verification and limits](docs/TESTING.md)
 - [Service A/B and coupling assessment](docs/SERVICE_AUTHORING.md) · [SPI all-FF investigation](docs/SPI_INVESTIGATION.md)

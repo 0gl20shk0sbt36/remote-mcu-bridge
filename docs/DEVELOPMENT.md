@@ -108,7 +108,7 @@ python3 tools/rmb.py build --profile compile-enabled
 5. 检查 diff 不含令牌、Wi-Fi 配置、私有 ELF/bin/map/日志。哈希绑定不意味着产物可公开。
 6. 记录命令、配置类别、产物哈希和证据边界；未经授权不连接设备、不烧录、不执行破坏性 STM 操作。
 
-原生通过只证明模拟路径，交叉构建只证明编译/链接。既有证据见 [测试](TESTING.md) 与 [ABI4 实机记录](validation/abi4-hardware-20261108.md)。历史 SPI 600 次结果属于当时可选诊断服务，不是默认 UART 服务的能力或本次新验收。
+原生通过只证明模拟路径，交叉构建只证明编译/链接。既有证据见 [测试](TESTING.md) 与 [ABI4 实机记录](validation/abi4-hardware.md)。历史 SPI 600 次结果属于当时可选诊断服务，不是默认 UART 服务的能力或本次新验收。
 
 ---
 
@@ -212,4 +212,4 @@ The wrapper prefers `.venv-style`; Windows uses `.venv-style\Scripts\python.exe`
 
 Run native tests, safe/enabled cross-builds and real module link checks; run hello manifest/native tests when relevant. Add regression cases for authentication, byte-exact replay, short I/O, absolute deadlines, stale handles/ACKs, concurrency, init failure and quarantine. Review diffs for tokens, private Wi-Fi configuration, ELF/bin/map and logs; binding does not make artifacts publishable. Record commands, configuration class, artifact hashes and limits. Do not connect/flash without authorization.
 
-Native tests prove simulated paths; cross-builds prove compilation/linking. See [Testing](TESTING.md) and [existing ABI4 hardware evidence](validation/abi4-hardware-20261108.md). Historical 600-transaction SPI results belong to optional diagnostics, not default UART capability or new validation.
+Native tests prove simulated paths; cross-builds prove compilation/linking. See [Testing](TESTING.md) and [existing ABI4 hardware evidence](validation/abi4-hardware.md). Historical 600-transaction SPI results belong to optional diagnostics, not default UART capability or new validation.
