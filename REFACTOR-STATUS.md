@@ -20,11 +20,22 @@ Done
   journal and reported to clients.
 - `compile-enabled` ESP-IDF build configures, compiles and links.
 
-Remaining work (native fixtures)
+Remaining work (native fixtures) — run `ctest` with `IDF_PATH` set, otherwise the
+cJSON-dependent fixtures fail for environmental reasons, not code reasons.
+
+Current exact failures (branch, IDF_PATH set): esp_structure (asserts the
+discovery string in resident, which moved to platform/net_esp_idf.c),
+generic_network (one leftover `vSemaphoreDelete` in the fixture body plus missing
+`_POSIX_C_SOURCE`/`time.h` in port_native_impl.c), service_watchdog,
+exact_deadline, supervisor_deadline, supervisor_startup, wifi_streams_host,
+module_format, supervisor_contracts, supervisor_protocol.
 - `esp32_rom/tests/port_native.h` + `port_native_impl.c` provide a pthread-based
   port with instrumentation, but the extraction fixtures still need their
   hand-written SDK stubs replaced and their assertions re-pointed at the port
   (instrumentation counters, reset enum, slot hooks).
+- `test_supervisor_deadline.py` / `test_supervisor_startup.py` slice
+  `supervisor.inc` with text anchors that moved when the port replaced
+  task/queue/WDT calls; re-anchor them.
 - `test_module_format.py` must assert the port call (`rmb_port_slot_map`) where it
   asserted `ESP_PARTITION_MMAP_INST`.
 - Fixture include paths differ by location (`ROOT` is `esp32_rom` for

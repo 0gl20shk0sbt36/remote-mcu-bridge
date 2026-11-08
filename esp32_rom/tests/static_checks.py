@@ -36,7 +36,7 @@ def flat(text):
 
 
 ROOT = Path(__file__).resolve().parents[1]
-source = (ROOT / "main/service.c").read_text()
+source = (ROOT / "main/resident.c").read_text()
 business = (ROOT / "module/business.c").read_text()
 backend = (ROOT / "module/platform/esp_idf_io.c").read_text()
 config_files = list((ROOT / "module").rglob("Kconfig*"))

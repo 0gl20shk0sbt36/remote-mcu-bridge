@@ -34,6 +34,7 @@ preamble = r"""
 #include <assert.h>
 #include <setjmp.h>
 #include "rmb/service.h"
+#include "rmb/port.h"
 #include "port_native.h"
 #include "rmb/supervisor.h"
 #define RTC_NOINIT_ATTR
