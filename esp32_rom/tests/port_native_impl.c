@@ -6,7 +6,7 @@ unsigned rmb_test_task_creates, rmb_test_task_deletes, rmb_test_notifies;
 int rmb_test_task_fail_after = -1;
 int rmb_test_resets;
 int rmb_test_wdt_registrations, rmb_test_wdt_feeds;
-rmb_reset_reason rmb_test_reset_reason_value = RMB_RST_POWER_ON;
+int rmb_test_reset_reason_value = RMB_RST_POWER_ON;
 void *rmb_test_current_task = (void *)1;
 int64_t rmb_test_now_us_value = -1;
 uint32_t rmb_test_stack_min_free = 4096;
@@ -49,7 +49,7 @@ void rmb_port_restart(void) {
 }
 
 rmb_reset_reason rmb_port_reset_reason(void) {
-    return rmb_test_reset_reason_value;
+    return (rmb_reset_reason)rmb_test_reset_reason_value;
 }
 
 /* ── Locks ────────────────────────────────────────────────────────────── */

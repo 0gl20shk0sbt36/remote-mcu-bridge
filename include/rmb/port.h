@@ -88,14 +88,17 @@ int64_t rmb_port_now_us(void);
 void rmb_port_delay_ticks(uint32_t ticks);
 
 /* Whole-chip reset and its provenance. */
+/* Numeric values are the established ESP-IDF reset-reason codes, because they
+ * are persisted in the fault journal and reported to clients by value. A port
+ * maps its own reset causes onto these; do not renumber. */
 typedef enum {
     RMB_RST_UNKNOWN = 0,
-    RMB_RST_POWER_ON,
-    RMB_RST_SOFTWARE,
-    RMB_RST_TASK_WATCHDOG,
-    RMB_RST_INTERRUPT_WATCHDOG,
-    RMB_RST_PANIC,
-    RMB_RST_OTHER
+    RMB_RST_POWER_ON = 1,
+    RMB_RST_SOFTWARE = 3,
+    RMB_RST_PANIC = 4,
+    RMB_RST_INTERRUPT_WATCHDOG = 5,
+    RMB_RST_TASK_WATCHDOG = 6,
+    RMB_RST_OTHER = 7
 } rmb_reset_reason;
 void rmb_port_restart(void);
 rmb_reset_reason rmb_port_reset_reason(void);

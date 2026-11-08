@@ -46,15 +46,18 @@ typedef struct {
     bool trigger_panic;
 } rmb_wdt_config_t;
 
-/* ── Instrumentation and hooks ─────────────────────────────────────────── */
-static unsigned rmb_test_task_creates, rmb_test_task_deletes, rmb_test_notifies;
-extern int rmb_test_task_fail_after; /* 0: next create fails; -1: never */
-extern int rmb_test_resets;
-static int rmb_test_wdt_registrations, rmb_test_wdt_feeds;
-extern rmb_reset_reason rmb_test_reset_reason_value;
-static void *rmb_test_current_task = (void *)1;
-extern int64_t rmb_test_now_us_value; /* >= 0: fixed clock */
-extern uint32_t rmb_test_stack_min_free;
+/* ── Instrumentation and hooks (defined in port_native_impl.c) ─────────── */
+extern unsigned rmb_test_task_creates __attribute__((unused));
+extern unsigned rmb_test_task_deletes __attribute__((unused));
+extern unsigned rmb_test_notifies __attribute__((unused));
+extern int rmb_test_task_fail_after __attribute__((unused));
+extern int rmb_test_resets __attribute__((unused));
+extern int rmb_test_wdt_registrations __attribute__((unused));
+extern int rmb_test_wdt_feeds __attribute__((unused));
+extern int rmb_test_reset_reason_value __attribute__((unused));
+extern int64_t rmb_test_now_us_value __attribute__((unused));
+extern void *rmb_test_current_task __attribute__((unused));
+extern uint32_t rmb_test_stack_min_free __attribute__((unused));
 
 struct native_task {
     int unused;

@@ -65,7 +65,7 @@ class SupervisorTests(unittest.TestCase):
                 "-shared",
                 "-fPIC",
                 str(p / "parser.c"),
-                str(ROOT / "esp32_rom" / "tests" / "port_native_impl.c"),
+                str(ROOT / "tests" / "port_native_impl.c"),
                 "-o",
                 str(p / "parser.so"),
             ],

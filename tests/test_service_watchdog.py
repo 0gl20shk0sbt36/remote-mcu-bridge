@@ -26,8 +26,10 @@ class ProductionWatchdog(unittest.TestCase):
                 "-fsanitize=address,undefined",
                 "-fno-pie",
                 "-no-pie",
+                "-I" + str(ROOT / "include"),
+                "-I" + str(ROOT / "esp32_rom" / "tests"),
+                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 str(ROOT / "tests/watchdog_native.c"),
-                str(ROOT / "esp32_rom" / "tests" / "port_native_impl.c"),
                 "-o",
                 str(binary),
             ]
