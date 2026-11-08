@@ -126,7 +126,14 @@ def main(argv=None):
     parser.add_argument("--board", default="esp32c3-stm32f103")
     parser.add_argument("--profile", choices=["safe", "compile-enabled"], default="safe")
     parser.add_argument("--build-dir", type=Path)
-    parser.add_argument("--user-config", type=Path)
+    parser.add_argument(
+        "--user-config", type=Path, help="private defaults file; final override authority"
+    )
+    parser.add_argument(
+        "--credentials-file",
+        type=Path,
+        help="private ssid/password(/token) file, e.g. ~/wifi.pw; overrides network macros",
+    )
     args = parser.parse_args(argv)
     try:
         backends = discover(ROOT, "backends")
@@ -170,6 +177,8 @@ def main(argv=None):
         ]
         if args.user_config:
             cmd += ["--user-config", str(args.user_config.resolve())]
+        if args.credentials_file:
+            cmd += ["--credentials-file", str(args.credentials_file.resolve())]
         return subprocess.call(cmd)
     except (ValueError, OSError) as exc:
         parser.error(str(exc))

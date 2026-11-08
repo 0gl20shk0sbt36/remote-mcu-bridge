@@ -1,20 +1,45 @@
 #!/usr/bin/env python3
-"""ESP-IDF build driver. No flash/monitor/hardware commands are exposed."""
+"""ESP-IDF build driver. No flash/monitor/hardware commands are exposed.
 
-import argparse, json, os, re, subprocess, sys
+Compile-time configuration has exactly one tracked source: the defaults file
+listed in the board registry (currently ``config/build.defaults``). This driver
+appends generated overlays after it — profile, then the file supplied with
+``--credentials-file`` — and finally the optional ``--user-config`` file, which
+keeps the last word. Secrets are read from the path you pass, never echoed and
+never written into the source tree.
+"""
+
+import argparse
+import json
+import os
 from pathlib import Path
+import re
+import subprocess
+import sys
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument("command", choices=["configure", "build"])
 for name in ("root", "backend", "board", "build-dir"):
     p.add_argument("--" + name, type=Path, required=True)
 p.add_argument("--profile", choices=["safe", "compile-enabled"], default="safe")
-p.add_argument("--user-config", type=Path)
+p.add_argument("--user-config", type=Path, help="private defaults file; final override authority")
+p.add_argument(
+    "--credentials-file",
+    type=Path,
+    help="private ssid/password(/token) file, e.g. ~/wifi.pw; overrides the network macros",
+)
 a = p.parse_args()
+
+# A relative --root such as "." would otherwise reach idf.py as a relative
+# SDKCONFIG_DEFAULTS path and resolve against the -C project directory.
+root = a.root.resolve()
+a.root = root
+a.build_dir = a.build_dir.resolve()
+
 # The driver is also callable directly: apply the same dependency-free contract
 # validation before invoking the SDK or creating build state.
-sys.path.insert(0, str(a.root.resolve() / "tools"))
-from rmb import validate, compatible
+sys.path.insert(0, str(root / "tools"))
+from rmb import compatible, validate
 
 try:
     backend = json.loads(a.backend.read_text())
@@ -22,36 +47,51 @@ try:
     validate(backend, a.root, a.backend, "backends")
     validate(board, a.root, a.board, "boards")
     compatible(backend, board)
+    expected_pins = {
+        "tx": 3,
+        "rx": 4,
+        "boot0": 5,
+        "nrst": 6,
+        "boot1": -1,
+        "spi_sclk": 7,
+        "spi_mosi": 1,
+        "spi_miso": 0,
+        "spi_cs": 10,
+    }
     if (
         backend["id"] != "esp-idf"
         or board["id"] != "esp32c3-stm32f103"
         or board["target"] != "esp32c3"
         or board.get("target_device") != "stm32f103c8"
-        or board["pins"]
-        != {
-            "tx": 3,
-            "rx": 4,
-            "boot0": 5,
-            "nrst": 6,
-            "boot1": -1,
-            "spi_sclk": 7,
-            "spi_mosi": 1,
-            "spi_miso": 0,
-            "spi_cs": 10,
-        }
+        or board["pins"] != expected_pins
     ):
         raise ValueError(
-            "ESP-IDF driver supports only the fixed esp32c3-stm32f103 board with fixed documented wiring; configure UART/BOOT/reset through matching Kconfig defaults"
+            "ESP-IDF driver supports only the fixed esp32c3-stm32f103 board with fixed "
+            "documented wiring; configure UART/BOOT/reset through the single defaults file"
         )
-    if a.build_dir.resolve() == a.root.resolve() or a.root.resolve().is_relative_to(
-        a.build_dir.resolve()
-    ):
+    if a.build_dir == root or root.is_relative_to(a.build_dir):
         raise ValueError("unsafe build directory")
 except (ValueError, OSError) as exc:
     p.error(str(exc))
-# A relative --root such as "." would otherwise reach idf.py as a relative
-# SDKCONFIG_DEFAULTS path and resolve against the -C project directory.
-a.root = a.root.resolve()
+
+sys.path.insert(0, str(root / "backends/esp-idf"))
+from config_defaults import ConfigError, complete_credentials, credential_lines
+from config_defaults import describe, load_credentials, profile_lines, read_values
+from config_defaults import validate as validate_config
+
+# Fail fast on unusable credentials: no build directory, no SDK probing first.
+credentials = None
+if a.credentials_file:
+    try:
+        # A missing token may come from RMB_TOKEN; the file wins when it has one.
+        credentials = complete_credentials(
+            load_credentials(a.credentials_file), os.environ.get("RMB_TOKEN")
+        )
+    except ConfigError as exc:
+        p.error(str(exc))
+if a.user_config and not a.user_config.is_file():
+    p.error("user configuration does not exist")
+
 idf = Path(os.environ.get("IDF_PATH", "__missing_idf__"))
 tool = idf / "tools/idf.py"
 if not tool.is_file():
@@ -59,50 +99,44 @@ if not tool.is_file():
 version = subprocess.check_output([sys.executable, str(tool), "--version"], text=True).strip()
 if not re.search(r"v?5\.5\.5(?:\s|$)", version):
     p.error("Expected ESP-IDF 5.5.5, got " + version)
-defaults = [str(a.root / x) for x in board["defaults"] if x != "config/ci-disabled.defaults"]
-defaults.append(
-    str(
-        a.root
-        / (
-            "config/ci-enabled.defaults"
-            if a.profile == "compile-enabled"
-            else "config/ci-disabled.defaults"
-        )
-    )
-)
-if a.user_config:
-    if not a.user_config.is_file():
-        p.error("user configuration does not exist")
-    defaults.append(str(a.user_config.resolve()))
+
+# One tracked compile-time configuration file; generated overlays follow it in
+# increasing priority, because a later SDKCONFIG_DEFAULTS entry wins.
+defaults = [str(root / x) for x in board["defaults"]]
 a.build_dir.mkdir(parents=True, exist_ok=True)
-# ABI4 resident networking is independent from the selected STM service wiring.
-# Public compile-only placeholders: never read production credentials here.
-resident_defaults = a.build_dir / "rmb-resident.defaults"
-resident_network = (
-    'CONFIG_RMB_ENABLE=y\nCONFIG_RMB_WIFI_SSID="COMPILE_ONLY_NO_NETWORK"\nCONFIG_RMB_WIFI_PASSWORD=""\nCONFIG_RMB_TOKEN="COMPILE_ONLY_NOT_A_SECRET"\n'
-    if a.profile == "compile-enabled"
-    else "# CONFIG_RMB_ENABLE is not set\n"
-)
-watchdog_defaults = "CONFIG_ESP_INT_WDT=y\nCONFIG_ESP_TASK_WDT_EN=y\nCONFIG_ESP_TASK_WDT_PANIC=y\nCONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y\n"
-resident_defaults.write_text(resident_network + watchdog_defaults)
-# Explicit user configuration remains the final authority.
-defaults.insert(len(defaults) - (1 if a.user_config else 0), str(resident_defaults))
+overlay = a.build_dir / "rmb-generated.defaults"
+lines = [
+    "# Generated by backends/esp-idf/build.py; do not edit or commit.",
+    "# Order matters: this file is applied after the tracked configuration.",
+]
+lines.extend(profile_lines(a.profile))
+if credentials is not None:
+    lines.extend(credential_lines(credentials))
+overlay.write_text("\n".join(lines) + "\n")
+overlay.chmod(0o600)  # may embed network credentials when --credentials-file is used
+defaults.append(str(overlay))
+if a.user_config:
+    defaults.append(str(a.user_config.resolve()))
+
 config = a.build_dir / "sdkconfig"
 contract = {
     "backend": backend["id"],
     "board": board["id"],
     "profile": a.profile,
+    # Never record secret values, only whether a credentials file was used.
+    "credentials_file_used": credentials is not None,
     "defaults": defaults,
 }
 state = a.build_dir / "rmb-build.json"
 if state.exists() and json.loads(state.read_text()) != contract:
     p.error("build directory belongs to different configuration; use a new directory")
 state.write_text(json.dumps(contract, indent=2) + "\n")
+
 command = [
     sys.executable,
     str(tool),
     "-C",
-    str(a.root / backend["implementation"]),
+    str(root / backend["implementation"]),
     "-B",
     str(a.build_dir),
     "-DIDF_TARGET=" + board["target"],
@@ -113,31 +147,21 @@ command = [
 print("SDK:", version, flush=True)
 rc = subprocess.call(command)
 if rc == 0:
-    values = {}
-    for line in config.read_text().splitlines():
-        if line.startswith("CONFIG_") and "=" in line:
-            key, value = line.split("=", 1)
-            values[key] = value
-    enabled = values.get("CONFIG_RMB_ENABLE") == "y"
-    if enabled != (a.profile == "compile-enabled"):
-        p.error("generated sdkconfig service enable does not match selected profile")
-    if enabled and (
-        values.get("CONFIG_ESP_INT_WDT") != "y"
-        or values.get("CONFIG_ESP_TASK_WDT_EN") != "y"
-        or values.get("CONFIG_ESP_TASK_WDT_PANIC") != "y"
-        or not any(
-            values.get(k) == "y"
-            for k in (
-                "CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT",
-                "CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT",
-            )
+    values = read_values(config.read_text())
+    try:
+        validate_config(values, a.profile)
+    except ConfigError as exc:
+        p.error(str(exc))
+    summary = describe(values)
+    # Redacted: shapes and lengths only, never the SSID, password or token.
+    print("Config: " + json.dumps(summary, sort_keys=True), flush=True)
+    if summary["placeholder_network"]:
+        print(
+            "WARNING: placeholder network values; compile-only, not deployable. "
+            "Pass --credentials-file to build a runnable image.",
+            flush=True,
         )
-    ):
-        p.error(
-            "enabled resident requires IWDT, TWDT panic, and panic reboot; regenerate stale sdkconfig or correct user configuration"
-        )
-    print(
-        "Generated sdkconfig resident profile and watchdog recovery validated; service wiring is module-owned.",
-        flush=True,
-    )
+    elif credentials is not None:
+        print("Credentials applied from the file supplied at build time.", flush=True)
+    print("Generated sdkconfig validated; service wiring is module-owned.", flush=True)
 sys.exit(rc)

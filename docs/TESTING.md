@@ -31,6 +31,15 @@
 - 对同一启用版底座真实交叉链接：`stm-uart` 镜像 52,820 B、5 个源文件、链接库不含 SPI、镜像内无 `spi-test`/`spi-pad-sample`/`pad_scope` 等标记；`stm-spi` 85,748 B、6 个源文件。两者均无未解析符号，合成取指地址下 **NOT DEPLOYABLE**。
 - 本轮未烧录、未改 STM Flash、未做新实机验证；默认服务是否可用仍以既有 ABI4 实机记录为准，SPI 历史 600 次结果为可选服务记录。
 
+### 编译期配置收敛与凭据注入（2026-11-08，本地）
+
+- 原先分散在 `esp32_rom/sdkconfig.defaults`、`config/ci-{enabled,disabled}.defaults` 与驱动内联字符串的编译期设置，全部合并为受版本控制的 `config/build.defaults`；板卡注册表只引用这一个文件，三份旧文件已删除。
+- 构建驱动按优先级追加生成层：profile（safe 关闭 `CONFIG_RMB_ENABLE`）→ `--credentials-file` → `--user-config`；凭据层写入构建目录内 `rmb-generated.defaults` 并设 0600，不进入源码树。
+- 凭据文件支持 `wifi.pw` 两行位置式（SSID、密码，可选第三行令牌）与 `key=value`；文件无令牌时可用 `RMB_TOKEN` 补足；缺真实 SSID 或令牌少于 16 字节时启用档**直接失败**，不产出可部署镜像。
+- 真实执行：`safe` 与 `compile-enabled` 均重新完整构建通过；`compile-enabled` 分别用合成凭据与真实 `wifi.pw` 构建成功，生成 `sdkconfig` 中占位符被替换、STM 型号/引脚为 F103C8 与 3/4/5/6/-1、监听栈 12288。构建输出只有脱敏摘要，不含 SSID/密码/令牌原文；含真实凭据的构建目录验证后已删除。
+- 新增 `tests/test_build_config.py`（15 项）覆盖单文件契约、凭据解析/拒绝、覆盖优先级、脱敏摘要与 CLI 参数面；完整 CTest **30/30** 通过。
+- 深入扫描：受版本控制文件内无 `/home/...`、`C:\`、`/Users/...` 绝对路径，无 `wifi.pw` 引用，无个人 IP/用户名/MAC；凭据路径只以参数形式出现。
+
 ### 历史 ABI3 本地执行结果（2026-11-07）
 
 - 整理后的源码正本：**22/22 CTest 通过**，包含原工程适用测试、注册表、客户端、发现、probe、SPI 原始数据/采样接口及最小服务 A/B 的原生检查。最后完整运行在新增深度诊断与服务清单支持后执行。
@@ -102,6 +111,15 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 - The built-in default is now **`stm-uart` (no SPI)**: only the UART driver is compiled, with no SPI handlers, diagnostics or GP-SPI driver. SPI requires an explicit `--builtin-service stm-spi` and is mutually exclusive with `--module-manifest`.
 - Real cross-links against the same enabled resident: `stm-uart` is 52,820 B from five sources, links no SPI archive and contains no `spi-test`/`spi-pad-sample`/`pad_scope` markers; `stm-spi` is 85,748 B from six sources. Both have no undefined symbols and are **NOT DEPLOYABLE** at the synthetic text address.
 - No flashing, no STM Flash write and no new hardware claim in this round; default-service behaviour still rests on the existing ABI4 hardware record, and the historical 600-transfer SPI measurement belongs to the optional service.
+
+### Compile-time configuration consolidation and credential injection (2026-11-08, local)
+
+- Settings previously spread across `esp32_rom/sdkconfig.defaults`, `config/ci-{enabled,disabled}.defaults` and inline driver strings now live in the single tracked file `config/build.defaults`; the board registry references only that file and the three old files are gone.
+- The driver appends generated layers in increasing priority: profile (safe disables `CONFIG_RMB_ENABLE`) → `--credentials-file` → `--user-config`. The credential layer becomes `rmb-generated.defaults` inside the build directory (mode 0600) and never enters the source tree.
+- Credential files accept the two-line `wifi.pw` shape (SSID, password, optional third line token) or `key=value`; a missing token may come from `RMB_TOKEN`. An enabled build without a real SSID or with a token under 16 bytes fails instead of producing a deployable image.
+- Executed for real: both `safe` and `compile-enabled` rebuilt end to end; `compile-enabled` also built from a synthetic file and from the real `wifi.pw`. The generated sdkconfig had no placeholders, selected F103C8 with pins 3/4/5/6/-1 and a 12288-byte listener stack. Output was a redacted summary only; the build directory holding real credentials was deleted after verification.
+- New `tests/test_build_config.py` (15 checks) covers the single-file contract, credential parsing/rejection, override priority, redaction and the CLI surface. Full CTest: **30/30**.
+- Deep scan: no `/home/...`, `C:\` or `/Users/...` absolute paths, no `wifi.pw` reference and no personal IP/user/MAC in tracked files; credential paths appear only as arguments.
 
 ### Historical ABI3 local results (2026-11-07)
 

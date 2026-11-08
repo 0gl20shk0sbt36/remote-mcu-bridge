@@ -1,0 +1,53 @@
+# Single compile-time configuration for the ESP32-C3 resident and the STM service.
+#
+# This is the only tracked compile-time configuration file. `tools/rmb.py`
+# / `backends/esp-idf/build.py` pass it as SDKCONFIG_DEFAULTS, then append
+# generated overlays in this order (later wins):
+#
+#   1. config/build.defaults      (this file: public baseline + placeholders)
+#   2. profile overlay            (safe: CONFIG_RMB_ENABLE is not set)
+#   3. credentials overlay        (--credentials-file, e.g. ~/wifi.pw)
+#   4. --user-config              (explicit private file, final authority)
+#
+# Secrets never belong in this file. Put them in a path you pass at build time
+# with --credentials-file; that file is read, never copied into the tree.
+# The placeholder network values below only allow compile checks and must not
+# be deployed.
+
+# ── ESP-IDF baseline ────────────────────────────────────────────────────────
+CONFIG_IDF_TARGET="esp32c3"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
+
+# ── Recovery policy: a stalled task or interrupt must reboot, not warn ──────
+CONFIG_ESP_INT_WDT=y
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_PANIC=y
+CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
+
+# ── Resident: authentication, ports, concurrency ────────────────────────────
+CONFIG_RMB_ENABLE=y
+CONFIG_RMB_PORT=3333
+CONFIG_RMB_DISCOVERY_PORT=3334
+# Per-listener stack in ESP-IDF bytes, including the service callback, SDK,
+# logging and libc call chain. See docs/SERVICE_AUTHORING.md.
+CONFIG_RMB_LISTENER_STACK_BYTES=12288
+
+# Public placeholders: compile-only. Overridden by --credentials-file.
+CONFIG_RMB_WIFI_SSID="COMPILE_ONLY_NO_NETWORK"
+CONFIG_RMB_WIFI_PASSWORD=""
+CONFIG_RMB_TOKEN="COMPILE_ONLY_NOT_A_SECRET"
+
+# ── STM service defaults (the resident never uses these pins) ───────────────
+# Benchmark target. F407ZG geometry exists in rom/devices.c but that board
+# combination has no hardware evidence here.
+CONFIG_ROM_SERVICE_DEVICE_F103C8=y
+CONFIG_ROM_SERVICE_TX=3
+CONFIG_ROM_SERVICE_RX=4
+CONFIG_ROM_SERVICE_BOOT0=5
+CONFIG_ROM_SERVICE_NRST=6
+# -1: BOOT1 is pulled low externally and not driven by the ESP.
+CONFIG_ROM_SERVICE_BOOT1=-1

@@ -39,7 +39,7 @@ python3 tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103
 
 `python` 指向 Python 3 时也可使用 `python tools/rmb.py ...`。先安装并激活 ESP-IDF 5.5.5 的环境，确认 `idf.py --version`，再运行配置和构建。注册表位于 `backends/esp-idf/backend.json` 与 `boards/esp32c3-stm32f103/board.json`；以注册表和 CLI 帮助为准，不要把模板重命名后当作受支持的后端。
 
-安全基线见 `config/ci-disabled.defaults`；`config/ci-enabled.defaults` 中的公开网络名称、令牌及引脚是 **compile-only 占位值**。配置名称中的 `ci` 不代表已执行 CI。部署前应在本地独立配置网络、强随机令牌、准确引脚与目标几何，确认服务与模块运行开关，并审查生成的 `sdkconfig`。不要将本地配置提交到版本库。
+编译期配置只有一个文件：`config/build.defaults`（IDF 基线、看门狗与 panic 策略、端口、监听栈、STM 引脚全在里面）。`safe` 档由构建驱动追加一行关闭 `CONFIG_RMB_ENABLE`；网络凭据在编译时用 `--credentials-file ~/wifi.pw` 传入（默认档里的网络值是 **compile-only 占位值**），驱动自动追加为最高优先级的覆盖层，只在构建目录生成 0600 文件，不进仓库。文件里没有令牌时可用 `RMB_TOKEN` 环境变量补足。`--user-config` 仍可追加在最后作为最终覆盖。不要将本地配置提交到版本库。
 
 构建不会证明接线正确，也不应自动烧录。先断开目标电源，核对电平、公共地、交叉连接 UART TX/RX、BOOT 与复位线以及外部上拉。不能从板卡名字推断具体模块的引脚兼容性。
 
@@ -137,7 +137,7 @@ python3 tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103
 
 `python tools/rmb.py ...` is equivalent where `python` resolves to Python 3. Install and activate ESP-IDF 5.5.5 first and check `idf.py --version`. The registry entries are `backends/esp-idf/backend.json` and `boards/esp32c3-stm32f103/board.json`. Consult the registry and CLI help; renaming a template does not create a supported backend.
 
-The safe baseline is `config/ci-disabled.defaults`. Public network names, token strings, and pins in `config/ci-enabled.defaults` are **compile-only placeholders**. The `ci` filename is not evidence that CI ran. Before deployment, create private local configuration with the actual network, a strong random token, correct pins and target geometry, review service/module execution switches, and inspect the generated `sdkconfig`. Never commit local configuration.
+Compile-time configuration lives in exactly one file: `config/build.defaults` (IDF baseline, watchdog/panic policy, ports, listener stack and STM pins). The `safe` profile only appends a line disabling `CONFIG_RMB_ENABLE`. Network credentials are supplied at build time with `--credentials-file ~/wifi.pw`; the tracked network values are **compile-only placeholders** and the driver appends your file as the highest-priority overlay, written 0600 inside the build directory only. If the file has no token, `RMB_TOKEN` may supply it. `--user-config` is still appended last as the final override. Never commit local configuration.
 
 A build does not verify wiring and should not automatically flash anything. With target power disconnected, check voltage levels, common ground, crossed UART TX/RX, boot/reset signals, and required external pull-ups. A board name does not prove pin compatibility with a particular module.
 

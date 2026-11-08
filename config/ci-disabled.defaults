@@ -1,2 +1,0 @@
-# Public compile-only baseline. No device/network operations are performed.
-# CONFIG_RMB_ENABLE is not set

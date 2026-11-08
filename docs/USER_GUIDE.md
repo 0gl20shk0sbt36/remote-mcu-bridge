@@ -17,19 +17,25 @@
 
 ### 2. 首次构建底座
 
-在仓库根目录运行；安装并激活 ESP-IDF 5.5.5 环境，`idf.py --version` 应匹配。准备只在本机保存的 defaults，设置真实 `CONFIG_RMB_ENABLE=y`、`CONFIG_RMB_WIFI_SSID`、`CONFIG_RMB_WIFI_PASSWORD`、16–128 字节高熵 `CONFIG_RMB_TOKEN`，保留 IWDT/TWDT panic 与 panic reboot；默认 STM 服务还需核对 `CONFIG_ROM_SERVICE_DEVICE_F103C8`、TX=3/RX=4/BOOT0=5/NRST=6/BOOT1=-1。完整字段以 Kconfig 和板卡配置为准。
+安装并激活 ESP-IDF 5.5.5 环境，`idf.py --version` 应匹配。**编译期配置只有一个文件**：`config/build.defaults`（IDF 基线、IWDT/TWDT panic 与 panic reboot、端口、监听栈 12288、STM 引脚与 F103C8 选择都在其中）。不需要为部署另写一份 defaults。
 
-不要直接部署 `config/ci-enabled.defaults` 的公开占位值。不要读取/提交其他人的私有配置；底座、模块及 SDK 产物可能嵌入敏感信息，均按私有产物管理。
+凭据在编译时传入，不进仓库：
+
+- `--credentials-file PATH`：私有文件。支持两种写法 —— 两行位置式（第一行 SSID、第二行密码，可选第三行令牌，即 `wifi.pw` 形式），或 `key=value`/`key: value`（`ssid`、`password`/`psk`、`token`/`lan_token`）。`#` 开头为注释。
+- 文件里没有令牌时，用环境变量 `RMB_TOKEN` 补足（16–128 字节）。
+- 驱动把该文件生成为构建目录内的 `rmb-generated.defaults`（0600），**优先级高于** `config/build.defaults` 的占位网络值；构建目录内的 `sdkconfig` 与镜像仍按私有产物管理。
+- 需要覆盖非网络项时再用 `--user-config`，它排在最后，是最终覆盖。
 
 ```sh
-# 先在本机设置 PRIVATE_DEFAULTS 和新的 BUILD_DIR（均为实际路径）。
-python3 tools/rmb.py configure --backend esp-idf --board esp32c3-stm32f103 \
-  --profile compile-enabled --user-config "$PRIVATE_DEFAULTS" --build-dir "$BUILD_DIR"
+# BUILD_DIR 用新的绝对路径；凭据路径按你的实际情况写。
 python3 tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103 \
-  --profile compile-enabled --user-config "$PRIVATE_DEFAULTS" --build-dir "$BUILD_DIR"
+  --profile compile-enabled --credentials-file "$HOME/wifi.pw" \
+  --build-dir "$BUILD_DIR"
+# 文件里没有令牌时：
+RMB_TOKEN='<16-128 bytes>' python3 tools/rmb.py build ... --credentials-file "$HOME/wifi.pw"
 ```
 
-部署仍使用 `compile-enabled` 这个 profile 名，但**必须由最后的私有 defaults 替换占位网络/令牌**。safe profile 不提供在线装载入口。生成后审核 `$BUILD_DIR/sdkconfig`；变更配置来源或目录合约时使用新目录，不能假设默认值覆盖旧 sdkconfig。
+构建成功会打印一行**脱敏**汇总（是否配置、字节数、占位符状态、栈大小、STM 型号），不含 SSID/密码/令牌原文。缺少真实 SSID 或令牌会直接失败，不会生成可用镜像。safe profile 关闭网络与模块装载入口。修改配置后必须换新构建目录，旧 `sdkconfig` 不会被旧默认值悄悄覆盖。
 
 ### 3. 首次串口安装（会写 ESP Flash）
 
@@ -139,16 +145,25 @@ All control uses plaintext shared-token trusted-LAN protocols. Isolate the netwo
 
 ### 2. Build a private resident
 
-Activate ESP-IDF 5.5.5 and check `idf.py --version`. Create private defaults with actual `CONFIG_RMB_ENABLE=y`, Wi-Fi SSID/password and a high-entropy 16–128-byte `CONFIG_RMB_TOKEN`; retain IWDT/TWDT panic and panic reboot. For the fixed STM board verify F103C8 selection and TX=3/RX=4/BOOT0=5/NRST=6/BOOT1=-1 against Kconfig/board configuration. Never deploy public compile-only placeholders or read another person's configuration.
+Activate ESP-IDF 5.5.5 and check `idf.py --version`. **Compile-time configuration is a single file**: `config/build.defaults` (IDF baseline, IWDT/TWDT panic and reboot-on-panic, ports, the 12288-byte listener stack, STM pins and the F103C8 selection). You do not need a second defaults file for deployment.
+
+Credentials are supplied at build time and never stored in the tree:
+
+- `--credentials-file PATH`: a private file. Either the positional `wifi.pw` shape (line 1 SSID, line 2 password, optional line 3 token) or `key=value` / `key: value` with `ssid`, `password`/`psk`, `token`/`lan_token`. `#` starts a comment.
+- If the file has no token, `RMB_TOKEN` (16–128 bytes) may supply it.
+- The driver renders that file into `rmb-generated.defaults` inside the build directory (mode 0600) **ahead of** the placeholder network values in `config/build.defaults`. The generated sdkconfig and firmware remain private artifacts.
+- Use `--user-config` only for non-network overrides; it is applied last and wins.
 
 ```sh
-python3 tools/rmb.py configure --backend esp-idf --board esp32c3-stm32f103 \
-  --profile compile-enabled --user-config "$PRIVATE_DEFAULTS" --build-dir "$BUILD_DIR"
+# Use a new absolute BUILD_DIR; point the credentials path at your own file.
 python3 tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103 \
-  --profile compile-enabled --user-config "$PRIVATE_DEFAULTS" --build-dir "$BUILD_DIR"
+  --profile compile-enabled --credentials-file "$HOME/wifi.pw" \
+  --build-dir "$BUILD_DIR"
+# When the file carries no token:
+RMB_TOKEN='<16-128 bytes>' python3 tools/rmb.py build ... --credentials-file "$HOME/wifi.pw"
 ```
 
-Use actual local paths and a new build directory. Deployment still uses the profile named compile-enabled, **with final private defaults overriding placeholders**. Safe disables online loading. Inspect generated sdkconfig; old sdkconfig values can survive defaults changes. Treat all configuration and potentially credential-bearing build artifacts as private.
+A successful build prints one **redacted** summary line (configured or not, byte counts, placeholder state, stack size, STM part) with no SSID, password or token text. A missing real SSID or token fails the build instead of producing a deployable image. Safe disables networking and module loading. After a configuration change, use a fresh build directory; stale sdkconfig values are not silently reused.
 
 ### 3. First serial installation
 

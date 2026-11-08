@@ -92,7 +92,7 @@ assert '"../../rom/rom.c"' not in (ROOT / "main/CMakeLists.txt").read_text(), (
     "business ROM implementation belongs in independent XIP module, not resident base"
 )
 assert "rom/devices.c" not in (ROOT / "main/CMakeLists.txt").read_text()
-assert "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y" in (ROOT / "sdkconfig.defaults").read_text()
+assert "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y" in (ROOT.parent / "config/build.defaults").read_text()
 print(
     "PASS: partition geometry, protocol/config safety invariants and current ROM callback contract"
 )

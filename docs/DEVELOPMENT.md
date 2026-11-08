@@ -45,7 +45,9 @@ python3 tools/rmb.py configure --profile compile-enabled
 python3 tools/rmb.py build --profile compile-enabled
 ```
 
-safe 默认关闭网络和装载入口；compile-enabled 使用公开占位网络/令牌，只用于编译检查。两个 profile 使用不同构建目录，不应混用。私有部署配置、独立目录及实际烧录流程见 [使用手册](USER_GUIDE.md)。构建驱动检查 SDK 版本、注册表固定板型、生成配置的启用状态、IWDT/TWDT panic 和 panic reboot。修改 defaults 文件后，已有 `sdkconfig` 不一定自动更新；用新目录重新配置并审核生成值。
+编译期配置只有一个受版本控制的文件：`config/build.defaults`。它由板卡注册表的 `defaults` 指向，包含 IDF 基线、看门狗/panic 策略、RMB 端口与监听栈、STM 引脚与型号。构建驱动按优先级追加生成层：profile 覆盖（safe 关闭 `CONFIG_RMB_ENABLE`）→ `--credentials-file`（`wifi.pw` 两行位置式或 `key=value`，令牌缺失时回退 `RMB_TOKEN`）→ `--user-config`（最终覆盖）。凭据层写在构建目录内并设 0600，不进入源码树；成功构建只打印脱敏摘要（是否配置、字节数、占位符状态、栈、STM 型号）。
+
+两个 profile 使用不同构建目录，不应混用。私有部署与烧录流程见 [使用手册](USER_GUIDE.md)。构建驱动检查 SDK 版本、注册表固定板型、生成配置的启用状态、IWDT/TWDT panic 和 panic reboot，并在启用档缺少真实 SSID/令牌时直接失败。修改配置后，已有 `sdkconfig` 不一定自动更新；用新目录重新配置并审核生成值。
 
 ### 3. 改服务与改底座不是同一件事
 
@@ -145,7 +147,7 @@ python3 tools/rmb.py configure --profile compile-enabled
 python3 tools/rmb.py build --profile compile-enabled
 ```
 
-Safe disables networking/loading. Compile-enabled uses public compile-only placeholders, not deployment credentials. Keep profile directories separate. The build driver validates the fixed registry board, SDK version, generated enable state, IWDT/TWDT panic and panic reboot. Existing sdkconfig may retain old values after defaults change: configure a new directory and inspect it. See [deployment](USER_GUIDE.md) for private configuration.
+Compile-time configuration has one tracked source, `config/build.defaults`, referenced by the board registry. The driver appends generated layers in increasing priority: profile (safe disables `CONFIG_RMB_ENABLE`) → `--credentials-file` (the `wifi.pw` positional shape or `key=value`; a missing token may come from `RMB_TOKEN`) → `--user-config` (final override). The credential layer is written mode 0600 inside the build directory, never into the tree, and a successful build prints only a redacted summary. Keep profile directories separate. The driver validates the fixed registry board, SDK version, generated enable state, IWDT/TWDT panic and reboot-on-panic, and fails an enabled build without a real SSID/token. Existing sdkconfig may retain old values after a config change: configure a new directory and inspect it. See [deployment](USER_GUIDE.md) for the private flow.
 
 ### 3. Service versus resident changes
 

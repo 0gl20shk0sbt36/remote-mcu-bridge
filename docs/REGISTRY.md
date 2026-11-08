@@ -9,15 +9,18 @@ be a subset of the backend's capabilities. Paths may not escape their root.
 Each backend owns its Python build driver. The CLI runs it using the current
 Python interpreter with positional `configure` or `build`, and required
 `--root`, `--backend`, `--board`, `--build-dir`, `--profile` arguments. An optional
-`--user-config` is an absolute path to a private defaults file. Exit status is
-propagated. New ports must implement this interface, descriptor and board tests,
+`--credentials-file` is an absolute path to a private ssid/password(/token)
+file such as `~/wifi.pw`; its values become a generated overlay that overrides
+the tracked network macros. `--user-config` is an absolute path to a private
+defaults file and is applied last. Exit status is propagated. New ports must implement this interface, descriptor and board tests,
 not add a dispatch branch to the CLI. The ESP-IDF driver checks SDK version and
 uses IDF's toolchain validation. Activate the pinned SDK environment first.
 
 Use separate build directories per profile. `safe` disables the service;
-`compile-enabled` uses public placeholders to test enabled linkage without
-network or hardware. Configuration changes require a fresh build directory.
-Private configuration belongs in ignored `user-config/`, never in board JSON.
+`compile-enabled` uses public placeholders to test enabled linkage, or real
+credentials through `--credentials-file` for a runnable image. Configuration
+changes require a fresh build directory. Tracked compile-time settings belong
+in the board `defaults` file only, never in board JSON or a private overlay.
 
 Run `python3 tests/test_registry.py` to test discovery, extension without a
 core switch, incompatible/invalid descriptors, traversal and CLI failure.

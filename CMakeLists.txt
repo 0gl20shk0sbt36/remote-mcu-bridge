@@ -60,3 +60,5 @@ add_test(NAME hello_service_native COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/exampl
 set_tests_properties(spi_pad_request hello_service_native PROPERTIES TIMEOUT 60 LABELS native)
 add_test(NAME cli_token_file COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cli_token_file.py)
 set_tests_properties(cli_token_file PROPERTIES TIMEOUT 30 LABELS native)
+add_test(NAME build_config COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_build_config.py)
+set_tests_properties(build_config PROPERTIES TIMEOUT 90 LABELS native)

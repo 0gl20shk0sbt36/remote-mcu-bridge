@@ -10,8 +10,7 @@
     "wifi-management"
   ],
   "defaults": [
-    "esp32_rom/sdkconfig.defaults",
-    "config/ci-disabled.defaults"
+    "config/build.defaults"
   ],
   "target_device": "stm32f103c8",
   "pins": {

@@ -71,7 +71,7 @@ cmake --build --preset native
 ctest --preset native --output-on-failure
 ```
 
-安全默认值应关闭服务和模块运行。`config/ci-disabled.defaults` 是关闭基线；`config/ci-enabled.defaults` 的公开占位网络/令牌/引脚只用于 compile-only 检查，不得部署。新后端也必须具备同样的防误启动行为。
+编译期配置应收敛到一个受版本控制的文件（本仓为 `config/build.defaults`），profile 与凭据以构建期覆盖层追加，`safe` 必须关闭服务和模块运行；凭据文件由参数传入、不落仓库。占位网络值只用于 compile-only 检查，不得部署。新后端也必须具备同样的防误启动行为。
 
 ### 6. 验收与证据
 
@@ -155,7 +155,7 @@ cmake --build --preset native
 ctest --preset native --output-on-failure
 ```
 
-Safe defaults must disable service and module execution. `config/ci-disabled.defaults` is the disabled baseline. Public network/token/pin placeholders in `config/ci-enabled.defaults` are compile-only and must not be deployed. New backends need equivalent protection against accidental activation.
+Keep compile-time configuration in one tracked file (here `config/build.defaults`) and append profile and credential overlays at build time; `safe` must disable service and module execution. Credentials arrive through a path argument and never enter the tree. Placeholder network values are compile-only and must not be deployed. New backends need equivalent protection against accidental activation.
 
 ### 6. Acceptance and evidence
 
