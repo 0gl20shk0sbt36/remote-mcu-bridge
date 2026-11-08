@@ -307,8 +307,7 @@ static bool auth_header(connection_slot *s) {
     if (p.p == p.end || *p.p != '{' || !compound(&p, true, true))
         return false;
     space(&p);
-    if (p.p != p.end || p.tokens != 1 || rmb_port_now_us() >= deadline ||
-        !authenticated(p.token))
+    if (p.p != p.end || p.tokens != 1 || rmb_port_now_us() >= deadline || !authenticated(p.token))
         return false;
     s->replay_pos = 0;
     s->replay_size = (s->flags == RMB_NET_AUTH_REPLAY) ? n : 0;
@@ -361,8 +360,8 @@ static bool net_exact(rmb_connection h, void *buffer, size_t size, bool writing,
         p += n;
         size -= n;
     }
-    bool ok = rmb_port_now_us() < deadline &&
-              (!size || socket_exact(s->fd, p, size, writing, deadline));
+    bool ok =
+        rmb_port_now_us() < deadline && (!size || socket_exact(s->fd, p, size, writing, deadline));
     ok = ok && rmb_port_now_us() < deadline;
     rmb_port_mutex_give(s->lock);
     return ok;

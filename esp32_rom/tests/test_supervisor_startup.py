@@ -294,7 +294,18 @@ def build_run(post):
                 "-Werror",
                 "-Wno-pointer-to-int-cast",
                 '-DRMB_PORT_PLATFORM_HEADER="port_mock_platform.h"',
-                "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
+                "-I"
+                + str(
+                    next(
+                        p
+                        for p in (
+                            ROOT / "tests",
+                            ROOT / "esp32_rom" / "tests",
+                            ROOT.parent / "tests",
+                        )
+                        if (p / "port_native.h").is_file()
+                    )
+                ),
                 "-Wno-unused-function",
                 "-fno-pie",
                 "-no-pie",

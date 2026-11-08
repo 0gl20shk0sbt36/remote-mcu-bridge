@@ -78,6 +78,9 @@ helpers = service[at(service, "bool authenticated(") : at(service, '#include "st
 helpers = helpers.replace('#include "module_runtime.h"', "")
 preamble = r"""
 #define _POSIX_C_SOURCE 200809L
+/* Build selection must precede the port header: it fixes RMB_CONFIG_TOKEN. */
+#define CONFIG_ROM_SERVICE_TOKEN "public-native-test-token"
+#define CONFIG_RMB_TOKEN CONFIG_ROM_SERVICE_TOKEN
 #include <assert.h>
 #include "rmb/port.h"
 #include <pthread.h>
@@ -102,8 +105,6 @@ static const rmb_net_api native_net={.read=native_read,.write=native_write};
 static int64_t esp_timer_get_time(void);
 static const rmb_host native_host={.net=&native_net,.now_us=esp_timer_get_time};
 static const rmb_host *host=&native_host;
-#define CONFIG_ROM_SERVICE_TOKEN "public-native-test-token"
-#define CONFIG_RMB_TOKEN CONFIG_ROM_SERVICE_TOKEN
 static void service_progress(void) {}
 static void service_io_progress(void) {}
 #define CONFIG_ROM_SERVICE_RX 4
@@ -145,6 +146,12 @@ static int uart_write_bytes(int p,const void *d,size_t n){(void)p;assert(owner);
 static int uart_wait_tx_done(int p,int t){(void)p;(void)t;return 0;}
 static int uart_read_bytes(int p,void *d,size_t n,int t){(void)p;(void)t;assert(owner);if(atomic_exchange(&uart_inject,false)){assert(n>=5);memcpy(d,"pong\0",5);uart_inject=false;return 5;}return 0;}
 static void vTaskDelay(int t){struct timespec d={t/1000,(long)(t%1000)*1000000};nanosleep(&d,NULL);}
+static void *xSemaphoreCreateMutex(void){return (void *)1;}
+static void *xSemaphoreCreateBinary(void){return (void *)1;}
+static void *xQueueCreate(unsigned length,unsigned item){(void)length;(void)item;return (void *)1;}
+/* The FreeRTOS-style mocks above implement the resident port contract; the
+ * embedded objects stay addressable (their values are this fixture's state). */
+#include "port_compat.h"
 """
 tests = r"""
 static void check_auth(const char *text,bool uart,bool expected,unsigned expected_baud) {
@@ -155,8 +162,9 @@ static void check_auth(const char *text,bool uart,bool expected,unsigned expecte
  if(expected && uart)assert(baud==expected_baud);
  close(f[0]);close(f[1]);
 }
-static int console(const char *f,va_list v){(void)f;(void)v;console_calls++;return 7;}
-static int emit(const char *f,...){va_list v;va_start(v,f);int n=log_tee(f,v);va_end(v);return n;}
+/* The platform formats a line, prints it, and offers it to the resident for
+ * bounded capture; the resident no longer owns a console tee. */
+static int emit(const char *f,...){char line[1024];va_list v;va_start(v,f);int n=vsnprintf(line,sizeof line,f,v);va_end(v);assert(n>0&&(size_t)n<sizeof line);console_calls++;rmb_log_capture(line,(size_t)n);return n;}
 
 static void *worker(void *p){uart_framed_session(*(int*)p,115200);return NULL;}
 static void data_send(int fd,uint32_t epoch,const char *text,size_t n){uint8_t b[128]={1,0,(uint8_t)(n+4)};relay_encode_epoch(b+3,epoch);memcpy(b+7,text,n);assert(write(fd,b,n+7)==(ssize_t)(n+7));}
@@ -202,7 +210,7 @@ int main(void){
  assert(stream_pop(&r,&cursor,b,&lost)==sizeof b && lost==9968);
  for(int i=0;i<31;i++)assert(stream_pop(&r,&cursor,b,&lost)==sizeof b && !lost);
  assert(!stream_pop(&r,&cursor,b,&lost));assert(sizeof(r)<=16384);
- console_print=console;assert(emit("%0600d",1)==7 && console_calls==1);
+ assert(emit("%0600d",1)==600 && console_calls==1);
  cursor=0;size_t n=stream_pop(&log_ring,&cursor,b,&lost);assert(n==255);assert(!memcmp(b+n-17," [log truncated]\n",17));
  int f[2];assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));assert(xSemaphoreTake(uart_owner,0));mode_changes=0;uart_session(f[1],115200);assert(owner==1 && !mode_changes && !gives);xSemaphoreGive(uart_owner);gives=0;close(f[0]);close(f[1]);
  assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));owner=0;shutdown(f[0],SHUT_WR);uart_session(f[1],115200);assert(!owner && gives==1 && last_parity==UART_PARITY_DISABLE);close(f[0]);close(f[1]);
@@ -219,10 +227,9 @@ int main(void){
  /* Empty history and disconnected log subscriber terminate without UART access. */
  assert(!socketpair(AF_UNIX,SOCK_STREAM,0,f));shutdown(f[0],SHUT_WR);log_session(f[1],false);close(f[0]);close(f[1]);
  check_priority_framed();
- puts("PASS actual C stream auth, malformed/duplicate/range rejection, ring overwrite/truncation, console tee, UART busy/no-side-effects/release and log disconnect");
+ puts("PASS actual C stream auth, malformed/duplicate/range rejection, ring overwrite/truncation, bounded log capture, UART busy/no-side-effects/release and log disconnect");
  return 0;
 }
-#include "port_compat.h"
 """
 with tempfile.TemporaryDirectory(
     prefix="v14-streams-", dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
@@ -232,9 +239,17 @@ with tempfile.TemporaryDirectory(
     subprocess.run(
         [
             "cc",
-            "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
-            "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
-            '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
+            "-I"
+            + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
+            "-I"
+            + str(
+                next(
+                    p
+                    for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests")
+                    if (p / "port_native.h").is_file()
+                )
+            ),
+            '-DRMB_PORT_PLATFORM_HEADER="port_mock_platform.h"',
             "-std=c11",
             "-pthread",
             "-Wall",

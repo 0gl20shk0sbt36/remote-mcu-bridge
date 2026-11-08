@@ -46,6 +46,8 @@ static void *timed_copy(void *d,const void *s,size_t n) {
 #define recv timed_recv
 #define send timed_send
 #define memcpy timed_copy
+/* Primitive creators come from the shared prelude; only the queue-send hook
+ * (generic_network creates one mutex per listener) is fixture-specific here. */
 """
 base = (ROOT / "esp32_rom/main/resident.c").read_text()
 base = base[base.index("bool socket_exact(") : base.index("bool reply(")]
@@ -75,6 +77,10 @@ stm = stm.replace("socket_exact(", "stm_exact(", 1)
 hello = (ROOT / "examples/services/hello/service.c").read_text()
 hello = hello[hello.index("static bool socket_exact(") : hello.index("static bool reply(")]
 hello = hello.replace("socket_exact(", "hello_exact(", 1)
+# After every fixture mock, before any production unit: the shim turns the
+# port contract into calls on the mocks above, so the code under test keeps
+# its instrumentation while talking only to rmb/port.h.
+seam = '#include "port_compat.h"\n'
 post = r"""
 int main(void) {
  for(unsigned layer=0;layer<2;layer++)for(unsigned writing=0;writing<2;writing++)
@@ -109,26 +115,36 @@ int main(void) {
  assert(!stm_exact(77,NULL,0,false,1000));assert(!hello_exact(77,NULL,0,false,1000,1));
  puts("PASS actual base/network/STM/hello final-byte deadlines: before accepted, equality/late rejected for read/write/replay");
 }
-#include "port_compat.h"
 """
 with tempfile.TemporaryDirectory(
     prefix="rmb-exact-deadline-", dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
 ) as work:
     path = Path(work)
     (path / "deadline.c").write_text(
-        pre + wrappers + base + network + module_shims + stm + hello + post
+        pre + wrappers + module_shims + seam + base + network + stm + hello + post
     )
     subprocess.run(
         [
             "cc",
-            "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
-            "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
-            '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
+            "-I"
+            + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
+            "-I"
+            + str(
+                next(
+                    p
+                    for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests")
+                    if (p / "port_native.h").is_file()
+                )
+            ),
+            '-DRMB_PORT_PLATFORM_HEADER="port_mock_platform.h"',
             "-std=c11",
             "-Wall",
             "-Wextra",
             "-Werror",
             "-Wno-misleading-indentation",
+            # Port logging drops its arguments, so a few mocks the production
+            # code used to call directly are now unreachable from this TU.
+            "-Wno-unused-function",
             "-fsanitize=address,undefined",
             "-fno-pie",
             "-no-pie",

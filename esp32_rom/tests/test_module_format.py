@@ -185,11 +185,17 @@ class ModuleFormatTests(unittest.TestCase):
 
     def test_runtime_uses_managed_xip_and_defers_entry(self):
         source = (ROOT / "main/module_runtime.c").read_text()
-        self.assertIn(flat("ESP_PARTITION_MMAP_INST"), flat(source))
-        self.assertIn(flat("esp_partition_munmap(mapped_handle)"), flat(source))
+        # The executable mapping moved behind rmb/port.h: the resident must ask
+        # the port for the slot mapping, while the platform owns the IDF mmap
+        # flags and the matching munmap. Assert both halves, not just the move.
+        platform = "".join(p.read_text() for p in sorted((ROOT / "main/platform").glob("*.c")))
+        self.assertIn(flat("rmb_port_slot_map(&text)"), flat(source))
+        self.assertIn(flat("ESP_PARTITION_MMAP_INST"), flat(platform))
+        self.assertIn(flat("esp_partition_munmap(mapped_handle)"), flat(platform))
+        self.assertNotIn(flat("ESP_PARTITION_MMAP_INST"), flat(source))
         self.assertNotIn(flat("module_text_start"), flat(source))
         self.assertNotIn(flat("24576"), flat(source))
-        finish = source.split("esp_err_t module_runtime_install_finish(", 1)[1].split(
+        finish = source.split("int module_runtime_install_finish(", 1)[1].split(
             "int module_rom_validate(", 1
         )[0]
         self.assertNotIn(flat("load(p)"), flat(finish))
@@ -200,7 +206,11 @@ class ModuleFormatTests(unittest.TestCase):
         self.assertIn(flat("bridge_update_finish(&update,digest)"), flat(finish))
         self.assertIn(flat("bridge_footer_verify(u,255)"), flat(core))
         self.assertIn(flat("bridge_footer_verify(u,0)"), flat(core))
-        self.assertIn(flat("mbedtls_sha256_finish"), flat(source))
+        # Hashing moved with storage behind the port: the resident still owns
+        # the digest contract (slot + base binding), the platform runs SHA-256.
+        self.assertIn(flat("rmb_port_slot_sha256((uint32_t)o,(uint32_t)n,digest)"), flat(source))
+        self.assertIn(flat("rmb_port_base_sha256(base)"), flat(source))
+        self.assertIn(flat("mbedtls_sha256_finish"), flat(platform))
         self.assertIn(flat("u->ops->check_image(u->ctx,u->expected)"), flat(core))
         self.assertIn(flat("u->ops->sha256(u->ctx,0,u->expected,actual)"), flat(core))
         self.assertLess(at(core, "memcmp(actual,digest,32)"), at(core, "/* Admission complete"))

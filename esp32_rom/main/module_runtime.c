@@ -174,10 +174,11 @@ static int storage_prepare(void) {
     if (!update.ops) {
         /* Byte-programmable storage: bounded 256-byte granules, padded with
          * erased bytes outside the exact image. */
-        storage = (bridge_storage_ops){MODULE_SLOT_SIZE,      4096,          256,
-                                       storage_read, storage_erase, storage_program,
-                                       storage_hash, storage_check, storage_sync};
-        int e = bridge_update_init(&update, &storage, NULL, MODULE_FOOTER_SIZE, sizeof(module_header));
+        storage = (bridge_storage_ops){MODULE_SLOT_SIZE, 4096,          256,
+                                       storage_read,     storage_erase, storage_program,
+                                       storage_hash,     storage_check, storage_sync};
+        int e =
+            bridge_update_init(&update, &storage, NULL, MODULE_FOOTER_SIZE, sizeof(module_header));
         if (e)
             return -1;
     }

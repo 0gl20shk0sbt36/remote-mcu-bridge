@@ -291,9 +291,12 @@ def main():
         raise ValueError("target data address differs from resident ELF")
 
     records = json.loads(database.read_text())
-    template = next((r for r in records if pathlib.Path(r["file"]).name == "service.c"), None)
+    # The resident entry point is resident.c; older trees named it service.c.
+    template = next(
+        (r for r in records if pathlib.Path(r["file"]).name in ("resident.c", "service.c")), None
+    )
     if template is None:
-        raise ValueError("compile_commands.json lacks resident service.c compile configuration")
+        raise ValueError("compile_commands.json lacks resident.c compile configuration")
     original = template.get("arguments") or shlex.split(template["command"])
     # Reuse the real generated sdkconfig, component include paths, defines,
     # toolchain response file and target flags. Replace only input/output.

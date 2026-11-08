@@ -124,8 +124,8 @@ static int supervisor_submit(supervisor_job *job) {
     if (!supervisor_queue || (supervisor_fault && job->kind != SJ_INIT))
         return -1;
     if (rmb_port_sem_create(&job->done))
-    if (!job->done)
-        return -1;
+        if (!job->done)
+            return -1;
     if (rmb_port_queue_send(supervisor_queue, &job, 0)) {
         rmb_port_sem_delete(job->done);
         return -1;
@@ -541,7 +541,8 @@ static void supervisor_init(void) {
     supervisor_active = false;
     supervisor_stage = valid ? supervisor_rtc.stage : 0;
     supervisor_record_write_locked();
-    const rmb_wdt_config_t watchdog = {.timeout_ms = 20000, .idle_core_mask = 0, .trigger_panic = true};
+    const rmb_wdt_config_t watchdog = {
+        .timeout_ms = 20000, .idle_core_mask = 0, .trigger_panic = true};
     if (rmb_port_wdt_configure(&watchdog))
         RMB_LOGE(TAG, "watchdog configure failed");
     if (rmb_port_queue_create(1, sizeof(supervisor_job *), &supervisor_queue))

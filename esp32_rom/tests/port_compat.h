@@ -32,17 +32,35 @@
 #define rmb_port_task_wait_notify() ulTaskNotifyTake(pdTRUE, portMAX_DELAY)
 #define rmb_port_task_notify(t) xTaskNotifyGive(t)
 #define rmb_port_task_stack_min_free() uxTaskGetStackHighWaterMark(NULL)
-#define rmb_port_task_create(n, f, c, s, p, o) \
-    (xTaskCreate(f, n, s, c, p, o) == pdPASS ? 0 : -1)
-int rmb_port_mutex_create(rmb_mutex_t *out) { rmb_mutex_t h = xSemaphoreCreateMutex(); if (!h) return -1; *out = h; return 0; }
+#define rmb_port_task_create(n, f, c, s, p, o) (xTaskCreate(f, n, s, c, p, o) == pdPASS ? 0 : -1)
+int rmb_port_mutex_create(rmb_mutex_t *out) {
+    rmb_mutex_t h = xSemaphoreCreateMutex();
+    if (!h)
+        return -1;
+    *out = h;
+    return 0;
+}
 #define rmb_port_mutex_take(m, t) (xSemaphoreTake(m, t) == pdTRUE ? 0 : -1)
 #define rmb_port_mutex_give(m) xSemaphoreGive(m)
 #define rmb_port_mutex_delete(m) vSemaphoreDelete(m)
-int rmb_port_sem_create(rmb_sem_t *out) { rmb_sem_t h = xSemaphoreCreateBinary(); if (!h) return -1; *out = h; return 0; }
+int rmb_port_sem_create(rmb_sem_t *out) {
+    rmb_sem_t h = xSemaphoreCreateBinary();
+    if (!h)
+        return -1;
+    *out = h;
+    return 0;
+}
 #define rmb_port_sem_take(s, t) (xSemaphoreTake(s, t) == pdTRUE ? 0 : -1)
 #define rmb_port_sem_give(s) xSemaphoreGive(s)
 #define rmb_port_sem_delete(s) vSemaphoreDelete(s)
-int rmb_port_queue_create(uint32_t length, uint32_t item, rmb_queue_t *out) { rmb_queue_t h = xQueueCreate(length, item); if (!h) return -1; *out = h; return 0; }
+int rmb_port_queue_create(uint32_t length, uint32_t item, rmb_queue_t *out) {
+    rmb_queue_t h = xQueueCreate(length, item);
+    if (!h)
+        return -1;
+    *out = h;
+    return 0;
+}
 #define rmb_port_queue_send(q, i, t) (xQueueSend(q, i, t) == pdTRUE ? 0 : -1)
 #define rmb_port_queue_receive(q, i, t) (xQueueReceive(q, i, t) == pdTRUE ? 0 : -1)
-#define rmb_port_event_wait(e, b, a, t) xEventGroupWaitBits(e, b, pdFALSE, (a) ? pdTRUE : pdFALSE, t)
+#define rmb_port_event_wait(e, b, a, t)                                                            \
+    xEventGroupWaitBits(e, b, pdFALSE, (a) ? pdTRUE : pdFALSE, t)

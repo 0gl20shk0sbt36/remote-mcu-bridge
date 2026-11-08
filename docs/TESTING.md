@@ -40,6 +40,17 @@
 - 新增 `tests/test_build_config.py`（15 项）覆盖单文件契约、凭据解析/拒绝、覆盖优先级、脱敏摘要与 CLI 参数面；完整 CTest **30/30** 通过。
 - 深入扫描：受版本控制文件内无 `/home/...`、`C:\`、`/Users/...` 绝对路径，无 `wifi.pw` 引用，无个人 IP/用户名/MAC；凭据路径只以参数形式出现。
 
+### 底座平台抽象与注册表化板卡（2026-11-08，本地）
+
+- 底座逻辑改为平台无关：`resident.c`、`generic_network.c`、`module_runtime.c`、`streams.inc`、`supervisor.inc`、`service_watchdog.inc` 全部通过 `include/rmb/port.h` 的 **46 个端口函数**访问时间/日志/复位/临界区/任务/同步/看门狗/保留内存/业务槽/可执行映射/基座身份/网络；ESP-IDF 实现集中在 `esp32_rom/main/platform/`。
+- 新增 `esp32_rom/tests/test_port_boundary.py` 并由 CTest 执行：可移植文件出现任何 `esp_*`/FreeRTOS 标识符、或契约函数未被平台实现，测试直接失败。这是"移植只需实现最小集合"的机器保证。
+- 复位原因保持 ESP 数值（1/3/4/5/6/7），因为该值写入故障日志并按原样上报；`port.h` 注明勿重编号。
+- 板卡不再硬编码：后端声明 `supported_targets`，驱动按注册表接受板卡；新增 `verify_board_wiring()` 把 `board.json` 的引脚与目标型号和生成的 `sdkconfig` 逐项比对，不一致即失败。**新板卡=新增 JSON**，而错接线不会被静默烧录。
+- 真实执行：完整 CTest **31/31** 通过（含新增 port_boundary、build_config 20 项、registry 11 项）；ESP-IDF `safe` 与 `compile-enabled`（带合成凭据）均重新完整构建通过；默认 `stm-uart` 与可选 `stm-spi` 对新底座的真实交叉链接通过（合成取指地址，NOT DEPLOYABLE）。
+- 抽取型原生夹具迁移完成：9 个夹具改用共享端口测试桩（`port_native.{h,c}`、`port_mock_platform.h`、`port_compat.h`），断言未放宽（计数、暂停/恢复 epoch、拒绝事务、截止期边界、故障日志语义均保留）。
+- 模块构建器改为在编译数据库中识别 `resident.c`（兼容旧的 `service.c` 名）。
+- 本轮未烧录、未改 STM Flash、未做新实机验证；历史 ABI4 实机证据仍适用于此前镜像，端口重构后的固件需要重新实机验收。
+
 ### 历史 ABI3 本地执行结果（2026-11-07）
 
 - 整理后的源码正本：**22/22 CTest 通过**，包含原工程适用测试、注册表、客户端、发现、probe、SPI 原始数据/采样接口及最小服务 A/B 的原生检查。最后完整运行在新增深度诊断与服务清单支持后执行。
@@ -120,6 +131,17 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 - Executed for real: both `safe` and `compile-enabled` rebuilt end to end; `compile-enabled` also built from a synthetic file and from the real `wifi.pw`. The generated sdkconfig had no placeholders, selected F103C8 with pins 3/4/5/6/-1 and a 12288-byte listener stack. Output was a redacted summary only; the build directory holding real credentials was deleted after verification.
 - New `tests/test_build_config.py` (15 checks) covers the single-file contract, credential parsing/rejection, override priority, redaction and the CLI surface. Full CTest: **30/30**.
 - Deep scan: no `/home/...`, `C:\` or `/Users/...` absolute paths, no `wifi.pw` reference and no personal IP/user/MAC in tracked files; credential paths appear only as arguments.
+
+### Resident platform abstraction and registry-driven boards (2026-11-08, local)
+
+- The resident logic is platform-free: `resident.c`, `generic_network.c`, `module_runtime.c`, `streams.inc`, `supervisor.inc` and `service_watchdog.inc` reach the platform only through the **46 functions** of `include/rmb/port.h` (time, log, reset, critical section, tasks, synchronisation, watchdog, retained RAM, business slot, executable mapping, base identity, network); the ESP-IDF implementation lives in `esp32_rom/main/platform/`.
+- New `esp32_rom/tests/test_port_boundary.py` (run by CTest) fails if a portable file names any `esp_*`/FreeRTOS identifier or if a contract function is not implemented by the platform. That is the mechanical guarantee behind "a port implements a minimal set".
+- Reset causes keep the ESP numeric values (1/3/4/5/6/7) because they are persisted in the fault journal and reported verbatim; `port.h` documents that they must not be renumbered.
+- Boards are no longer hardcoded: the backend declares `supported_targets` and the driver accepts any registered board, while `verify_board_wiring()` compares every `board.json` pin and the target device against the generated `sdkconfig` and fails on mismatch. **A new board is JSON**, and wrong wiring cannot be flashed silently.
+- Executed for real: full CTest **31/31** (including the new port_boundary, 20 build_config checks and 11 registry checks); ESP-IDF `safe` and `compile-enabled` (with synthetic credentials) rebuilt end to end; the default `stm-uart` and optional `stm-spi` services cross-linked against the new base (synthetic text address, NOT DEPLOYABLE).
+- The nine extraction fixtures were migrated onto shared port test doubles (`port_native.{h,c}`, `port_mock_platform.h`, `port_compat.h`) with assertions unchanged in strength (counters, pause/resume epochs, rejected transactions, deadline boundaries and fault-journal semantics all preserved).
+- The module builder now recognises `resident.c` in the compile database, falling back to the old `service.c` name.
+- No flashing, no STM Flash writes and no new hardware claim this round; the earlier ABI4 hardware evidence applies to the previous image, and the ported firmware still requires its own hardware acceptance.
 
 ### Historical ABI3 local results (2026-11-07)
 

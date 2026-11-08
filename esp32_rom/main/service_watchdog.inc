@@ -221,8 +221,8 @@ bool module_watchdog_configured(void) {
     rmb_port_lock_enter(&lease_lock);
     if (lease_enabled)
         for (unsigned i = 0; i < SERVICE_LEASES; i++)
-            ok |= leases[i].active && leases[i].root &&
-                  !lease_overdue(&leases[i], rmb_port_now_us());
+            ok |=
+                leases[i].active && leases[i].root && !lease_overdue(&leases[i], rmb_port_now_us());
     rmb_port_lock_exit(&lease_lock);
     return ok;
 }

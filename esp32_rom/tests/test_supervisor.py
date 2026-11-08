@@ -42,6 +42,7 @@ def flat(text):
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "main/supervisor.inc").read_text()
 SERVICE = (ROOT / "main/resident.c").read_text()
+PLATFORM = "".join(p.read_text() for p in sorted((ROOT / "main/platform").glob("*.c")))
 BUSINESS = (ROOT / "module/business.c").read_text()
 
 
@@ -58,8 +59,22 @@ class SupervisorTests(unittest.TestCase):
         subprocess.run(
             [
                 "cc",
-                "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
-                "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
+                "-I"
+                + str(
+                    (ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")
+                ),
+                "-I"
+                + str(
+                    next(
+                        p
+                        for p in (
+                            ROOT / "tests",
+                            ROOT / "esp32_rom" / "tests",
+                            ROOT.parent / "tests",
+                        )
+                        if (p / "port_native.h").is_file()
+                    )
+                ),
                 '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
                 "-std=c11",
                 "-Wall",
@@ -140,16 +155,18 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn(flat("service_fault_ack(seq)"), flat(serve))
         self.assertIn(flat("UPLOAD_US"), flat(serve))
         self.assertIn(flat("module_runtime_invalidate()"), flat(serve))
-        self.assertIn(flat("RTC_NOINIT_ATTR"), flat(SOURCE))
+        # Retained RTC storage is spelled by the port (RMB_RETAINED), and the
+        # record itself must live in it so the CRC survives reset.
+        self.assertIn(flat("static RMB_RETAINED supervisor_record supervisor_rtc"), flat(SOURCE))
         self.assertIn(flat("rmb_supervisor_record_write(&supervisor_rtc"), flat(SOURCE))
         self.assertIn(flat(".timeout_ms=20000"), flat(SOURCE))
         self.assertIn(
             flat("if(module_allowed_this_boot && !supervisor_fault && supervisor_start())"),
             flat(SOURCE),
         )
-        self.assertIn(flat("xSemaphoreTake(job->done,portMAX_DELAY)"), flat(SOURCE))
+        self.assertIn(flat("rmb_port_sem_take(job->done,RMB_WAIT_FOREVER)"), flat(SOURCE))
         self.assertIn(flat(".trigger_panic=true"), flat(SOURCE))
-        self.assertIn(flat("for(;;) vTaskDelay(1)"), flat(SOURCE))
+        self.assertIn(flat("for(;;) rmb_port_delay_ticks(1)"), flat(SOURCE))
         self.assertIn(flat("supervisor_updating=false"), flat(SOURCE))
         self.assertNotIn(flat("control_release"), flat(SOURCE))
         for call in ("rom_validate(", "rom_download_traced(", "rom_probe(", "rom_restart("):
@@ -161,10 +178,12 @@ class SupervisorTests(unittest.TestCase):
     def test_xip_activation_contracts(self):
         setup = SOURCE[at(SOURCE, "static void supervisor_init(void)") :]
         self.assertIn(flat("module_runtime_prepare()"), flat(SERVICE))
-        self.assertLess(at(SERVICE, "module_runtime_prepare()"), at(SERVICE, "nvs_flash_init()"))
-        self.assertLess(
-            at(SERVICE, "module_runtime_prepare()"), at(SERVICE, "esp_wifi_init(&init)")
-        )
+        # NVS/Wi-Fi live behind rmb_port_net_start now; prepare must still come
+        # first, and the platform may only initialize them inside that call.
+        self.assertLess(at(SERVICE, "module_runtime_prepare()"), at(SERVICE, "rmb_port_net_start("))
+        net_start = PLATFORM[at(PLATFORM, "int rmb_port_net_start(") :]
+        self.assertLess(0, at(net_start, "nvs_flash_init()"))
+        self.assertLess(at(net_start, "nvs_flash_init()"), at(net_start, "esp_wifi_init(&init)"))
         self.assertNotIn(flat("module_runtime_init()"), flat(setup))
         self.assertNotIn(flat("supervisor_submit("), flat(setup))
         manager = SOURCE[
@@ -173,9 +192,10 @@ class SupervisorTests(unittest.TestCase):
             )
         ]
         self.assertLess(at(manager, "listen(server,2)"), at(manager, "supervisor_start()"))
-        main = SERVICE[at(SERVICE, "void app_main(void)") :]
+        main = SERVICE[at(SERVICE, "void rmb_resident_main(void)") :]
         self.assertLess(
-            at(main, "supervisor_init()"), at(main, "xTaskCreate(supervisor_management")
+            at(main, "supervisor_init()"),
+            at(main, 'rmb_port_task_create("module-management", supervisor_management'),
         )
         start = SOURCE[
             at(SOURCE, "static int supervisor_start(") : at(
@@ -184,7 +204,7 @@ class SupervisorTests(unittest.TestCase):
         ]
         self.assertIn(flat("static supervisor_job init_job"), flat(start))
         self.assertNotIn(flat("xSemaphoreTake"), flat(start))
-        self.assertIn(flat("if(job->done) xSemaphoreGive(job->done)"), flat(SOURCE))
+        self.assertIn(flat("if(job->done) rmb_port_sem_give(job->done)"), flat(SOURCE))
         for field in ("text_address", "data_address", "module_abi", "reboot_required"):
             self.assertIn(field, SOURCE)
 

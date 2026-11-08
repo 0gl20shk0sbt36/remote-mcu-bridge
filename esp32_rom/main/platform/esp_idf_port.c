@@ -56,7 +56,10 @@ void rmb_port_log(int level, const char *tag, const char *format, ...) {
         used = sizeof buffer - 1;
         memcpy(buffer + used - (sizeof(mark) - 1), mark, sizeof(mark) - 1);
     }
-    printf("%c (%lld) %s: %s\n", marks[level < 0 ? 0 : level > 3 ? 3 : level],
+    printf("%c (%lld) %s: %s\n",
+           marks[level < 0   ? 0
+                 : level > 3 ? 3
+                             : level],
            (long long)(esp_timer_get_time() / 1000), tag ? tag : "rmb", buffer);
     rmb_log_capture(buffer, used);
 }
@@ -229,7 +232,8 @@ int rmb_port_wdt_feed(void) {
 RMB_RETAINED static uint8_t retained_area[512];
 void *rmb_port_retained(size_t bytes, size_t align) {
     uintptr_t start = ((uintptr_t)retained_area + (align - 1)) & ~(uintptr_t)(align - 1);
-    if (bytes > sizeof retained_area || start + bytes > (uintptr_t)retained_area + sizeof retained_area)
+    if (bytes > sizeof retained_area ||
+        start + bytes > (uintptr_t)retained_area + sizeof retained_area)
         return NULL;
     return (void *)start;
 }
@@ -301,8 +305,8 @@ int rmb_port_slot_map(uint32_t *text_address) {
     if (!mapped_base) {
         const void *base = NULL;
         esp_partition_mmap_handle_t handle;
-        esp_err_t rc = esp_partition_mmap(partition, 0, partition->size, ESP_PARTITION_MMAP_INST, &base,
-                                          &handle);
+        esp_err_t rc = esp_partition_mmap(partition, 0, partition->size, ESP_PARTITION_MMAP_INST,
+                                          &base, &handle);
         if (rc != ESP_OK)
             return -1;
         if (reserved_base && (uintptr_t)base != reserved_base) {

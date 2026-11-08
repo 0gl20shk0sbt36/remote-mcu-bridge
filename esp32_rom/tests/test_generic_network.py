@@ -13,7 +13,6 @@ pre = r"""
 #define _POSIX_C_SOURCE 200809L
 #include "rmb/service.h"
 #include <assert.h>
-#include "rmb/port.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -31,7 +30,8 @@ pre = r"""
 #ifndef CONFIG_RMB_LISTENER_STACK_BYTES
 #define CONFIG_RMB_LISTENER_STACK_BYTES 12288
 #endif
-#define ESP_LOGI(...) ((void)0)
+/* The port platform header maps this build definition onto the port contract. */
+#define RMB_CONFIG_LISTENER_STACK_BYTES CONFIG_RMB_LISTENER_STACK_BYTES
 typedef unsigned TickType_t;
 typedef void *TaskHandle_t;
 typedef int *SemaphoreHandle_t;
@@ -41,10 +41,12 @@ typedef int *SemaphoreHandle_t;
 #define portTICK_PERIOD_MS 1
 #define pdMS_TO_TICKS(x) (x)
 static int mutex;
-static int xSemaphoreTake(int *p,unsigned t) {(void)t;if(*p)return 0;*p=1;return 1;}
-static void xSemaphoreGive(int *p) {assert(*p);*p=0;}
-static int *xSemaphoreCreateMutex(void) {return &mutex;}
-static void vSemaphoreDelete(int *p) {(void)p;}
+static int xSemaphoreTake(void *p,unsigned t) {int *q=p;(void)t;if(*q)return 0;*q=1;return 1;}
+static void xSemaphoreGive(void *p) {int *q=p;assert(*q);*q=0;}
+static void *xSemaphoreCreateMutex(void) {return &mutex;}
+static void *xSemaphoreCreateBinary(void) {return &mutex;}
+static void *xQueueCreate(unsigned length,unsigned item) {(void)length;(void)item;return &mutex;}
+static void vSemaphoreDelete(void *p) {(void)p;}
 static bool code_allowed=true;
 static void *current_task=(void *)1;
 static unsigned task_creates, task_notifies, task_deletes;
@@ -60,6 +62,8 @@ bool module_runtime_code_pointer(const void *p) {return p!=NULL && code_allowed;
 bool module_runtime_ready(void) {return true;}
 bool authenticated(const char *s) {return s && !strcmp(s,"native-public-token");}
 void rmb_network_init_abort(void);
+/* FreeRTOS-style mocks above implement the port contract for this fixture. */
+#include "port_compat.h"
 """
 service = (ROOT / "esp32_rom/main/resident.c").read_text()
 pre += service[service.index("bool socket_exact(") : service.index("bool reply(")]
@@ -167,7 +171,6 @@ int main(void) {
  rmb_network_init_begin();assert(atomic_load(&phase)==ABORTED);
  puts("PASS production ABI4 auth, decoded duplicate/NUL rejection, replay/consume, stale generations, binary I/O, EOF, nonblocking and exact deadlines");
 }
-#include "port_compat.h"
 """
 with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))) as d:
     p = Path(d)
@@ -176,9 +179,23 @@ with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", str(Path.home() / 
         subprocess.run(
             [
                 "cc",
-                "-I" + str((ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")),
-                "-I" + str(next(p for p in (ROOT / "tests", ROOT / "esp32_rom" / "tests", ROOT.parent / "tests") if (p / "port_native.h").is_file())),
-                '-DRMB_PORT_PLATFORM_HEADER="port_native.h"',
+                "-I"
+                + str(
+                    (ROOT / "include") if (ROOT / "include").is_dir() else (ROOT.parent / "include")
+                ),
+                "-I"
+                + str(
+                    next(
+                        p
+                        for p in (
+                            ROOT / "tests",
+                            ROOT / "esp32_rom" / "tests",
+                            ROOT.parent / "tests",
+                        )
+                        if (p / "port_native.h").is_file()
+                    )
+                ),
+                '-DRMB_PORT_PLATFORM_HEADER="port_mock_platform.h"',
                 "-std=c11",
                 "-Wall",
                 "-Wextra",

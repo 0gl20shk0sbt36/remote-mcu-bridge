@@ -42,7 +42,8 @@
 #include <stdint.h>
 
 #ifndef RMB_PORT_PLATFORM_HEADER
-#error "define RMB_PORT_PLATFORM_HEADER, e.g. -DRMB_PORT_PLATFORM_HEADER=\"platform/esp_idf_port.h\""
+#error                                                                                             \
+    "define RMB_PORT_PLATFORM_HEADER, e.g. -DRMB_PORT_PLATFORM_HEADER=\"platform/esp_idf_port.h\""
 #endif
 #include RMB_PORT_PLATFORM_HEADER
 
@@ -168,9 +169,9 @@ int rmb_port_base_sha256(uint8_t digest[32]);
 /* Network bring-up. The platform owns association/DHCP details; the resident
  * only needs to know when an address exists and what it is. */
 typedef struct {
-    uint32_t address;  /* network byte order */
-    uint32_t netmask;  /* network byte order */
-    uint32_t gateway;  /* network byte order */
+    uint32_t address; /* network byte order */
+    uint32_t netmask; /* network byte order */
+    uint32_t gateway; /* network byte order */
     uint8_t mac[6];
 } rmb_net_info;
 int rmb_port_net_start(const char *ssid, const char *password);

@@ -209,8 +209,10 @@ PIN_OPTIONS = {
     "nrst": "CONFIG_ROM_SERVICE_NRST",
     "boot1": "CONFIG_ROM_SERVICE_BOOT1",
 }
-DEVICE_OPTIONS = {"stm32f103c8": "CONFIG_ROM_SERVICE_DEVICE_F103C8",
-                  "stm32f407zg": "CONFIG_ROM_SERVICE_DEVICE_F407ZG"}
+DEVICE_OPTIONS = {
+    "stm32f103c8": "CONFIG_ROM_SERVICE_DEVICE_F103C8",
+    "stm32f407zg": "CONFIG_ROM_SERVICE_DEVICE_F407ZG",
+}
 
 
 def verify_board_wiring(board, values):

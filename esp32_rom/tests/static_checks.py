@@ -37,9 +37,7 @@ def flat(text):
 
 ROOT = Path(__file__).resolve().parents[1]
 source = (ROOT / "main/resident.c").read_text()
-platform = "\n".join(
-    p.read_text() for p in sorted((ROOT / "main/platform").glob("*.c"))
-)
+platform = "\n".join(p.read_text() for p in sorted((ROOT / "main/platform").glob("*.c")))
 port_header = (ROOT.parent / "include/rmb/port.h").read_text()
 business = (ROOT / "module/business.c").read_text()
 backend = (ROOT / "module/platform/esp_idf_io.c").read_text()
@@ -67,7 +65,7 @@ assert stage[2] == "0x40" and stage[3] == 0x110000 and stage[4] >= 1024 * 1024
 assert next(r for r in rows if r[0] == "factory")[4] == 0x100000
 assert len(b"STM32ROM_DISCOVER_V1") == 20
 # Discovery answered the legacy query; it now lives in the platform layer.
-assert flat('sizeof(LEGACY_QUERY) - 1') in flat(platform)
+assert flat("sizeof(LEGACY_QUERY) - 1") in flat(platform)
 assert "STM32ROM_DISCOVER_V1" in platform and "STM32ROM_DISCOVER_V1" not in source
 assert at(business, "supervisor_validate(device, &source") < at(
     business, "supervisor_download(&io, device"

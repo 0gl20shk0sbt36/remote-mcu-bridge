@@ -68,7 +68,7 @@ void rmb_port_lock_exit(rmb_lock_t *lock) {
 
 /* ── Tasks ────────────────────────────────────────────────────────────── */
 int rmb_port_task_create(const char *name, void (*function)(void *), void *context,
-                                uint32_t stack_bytes, int priority, rmb_task_t *out) {
+                         uint32_t stack_bytes, int priority, rmb_task_t *out) {
     (void)name;
     (void)function;
     (void)context;
@@ -97,7 +97,8 @@ void rmb_port_task_terminate(rmb_task_t task) {
     ++rmb_test_task_deletes;
 }
 
-void rmb_port_task_wait_notify(void) {}
+void rmb_port_task_wait_notify(void) {
+}
 
 void rmb_port_task_notify(rmb_task_t task) {
     (void)task;

@@ -237,9 +237,7 @@ class BoardRegistryTests(unittest.TestCase):
         with self.assertRaises(config.ConfigError):
             config.verify_board_wiring(self.board(), values)
         with self.assertRaises(config.ConfigError):
-            config.verify_board_wiring(
-                self.board(target_device="stm32f407zg"), self.compiled()
-            )
+            config.verify_board_wiring(self.board(target_device="stm32f407zg"), self.compiled())
 
     def test_driver_no_longer_hardcodes_one_board(self):
         source = (ROOT / "backends/esp-idf/build.py").read_text()
@@ -252,8 +250,17 @@ class BoardRegistryTests(unittest.TestCase):
         """A differently wired board only needs a JSON descriptor."""
         board = self.board(
             id="esp32c3-stm32f103-alt",
-            pins={"tx": 6, "rx": 7, "boot0": 8, "nrst": 9, "boot1": -1,
-                  "spi_sclk": 10, "spi_mosi": 11, "spi_miso": 12, "spi_cs": 13},
+            pins={
+                "tx": 6,
+                "rx": 7,
+                "boot0": 8,
+                "nrst": 9,
+                "boot1": -1,
+                "spi_sclk": 10,
+                "spi_mosi": 11,
+                "spi_miso": 12,
+                "spi_cs": 13,
+            },
         )
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "board.json"
