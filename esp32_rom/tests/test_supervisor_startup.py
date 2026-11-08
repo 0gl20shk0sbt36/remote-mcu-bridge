@@ -121,9 +121,19 @@ int rmb_port_slot_read(uint32_t o,void *d,uint32_t n){return esp_partition_read(
 int rmb_port_slot_erase(uint32_t o,uint32_t n){return esp_partition_erase_range(&partition,o,n)?-1:0;}
 int rmb_port_slot_write(uint32_t o,const void *v,uint32_t n){return esp_partition_write(&partition,o,v,n)?-1:0;}
 int rmb_port_slot_sha256(uint32_t o,uint32_t n,uint8_t digest[32]){mbedtls_sha256_context c;mbedtls_sha256_init(&c);int rc=mbedtls_sha256_starts(&c,0);uint8_t b[512];while(!rc&&n){uint32_t k=n>sizeof b?sizeof b:n;if(rmb_port_slot_read(o,b,k)){mbedtls_sha256_free(&c);return -1;}rc=mbedtls_sha256_update(&c,b,k);o+=k;n-=k;}if(!rc)rc=mbedtls_sha256_finish(&c,digest);mbedtls_sha256_free(&c);return rc?-1:0;}
-int rmb_port_slot_map(uint32_t *text){mapped_base=(uintptr_t)0x42200000;*text=(uint32_t)mapped_base;return 0;}
+int rmb_port_slot_map(uint32_t *text){*text=(uint32_t)0x42200000;return 0;}
 int rmb_port_slot_unmap(void){return 0;}
 int rmb_port_base_sha256(uint8_t digest[32]){memset(digest,0,32);return 0;}
+
+/* Standard FreeRTOS mock set the port macros bind to. */
+typedef int *fixture_mutex_t;
+static int fixture_mutex_storage;
+static fixture_mutex_t xSemaphoreCreateMutex(void){return &fixture_mutex_storage;}
+typedef int *fixture_queue_t;
+static int fixture_queue_storage;
+static fixture_queue_t xQueueCreate(unsigned l,unsigned i){(void)l;(void)i;return &fixture_queue_storage;}
+static unsigned uxTaskGetStackHighWaterMark(void *t){(void)t;return 1024;}
+static int xPortInIsrContext(void){return 0;}
 static const esp_app_desc_t *esp_app_get_description(void) {static const esp_app_desc_t a={{0}};return &a;}
 static int native_module_entry(const rmb_host *h) {
  assert(h->abi==4&&h->size==sizeof *h);
