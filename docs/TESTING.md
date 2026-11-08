@@ -20,7 +20,7 @@
 - STM 服务 SRAM 下载、全读回校验、Go、同一 Linux PTY 跨下载暂停/恢复通过。UART 长连接保持时 ESP 业务槽更新/重启，然后 Wi-Fi 重装 STM 服务，目标 SRAM 应用仍能回复 PONG。
 - SPI 在恢复服务后及活动 UART 更新/重装后分别执行三档速率，各 100 次：累计 **600×64 字节双向事务**，两端全部校验通过，零错字节。历史 ABI3 全 FF 唯一根因仍未坐实。
 - 本轮**没有改写 STM Flash**；没有实测擦写中突然断电，RTC 不保证断电保留，未验证其他板或 cache-off 自定义 ISR。GitHub 发布与远程 CI 仍暂停。
-- [独立实机报告](validation/abi4-hardware.md) / [脱敏结构化证据](validation/abi4-hardware.json)。生产凭据、镜像和原始串口/Wi-Fi 日志保持私有。
+- 独立实机报告 / 脱敏结构化证据。生产凭据、镜像和原始串口/Wi-Fi 日志保持私有。
 
 ### 代码整理与默认服务分离（2026-11-08，本地）
 
@@ -57,11 +57,11 @@
 - 默认 `stm-uart` 服务（52,772 B）按设备上报地址构建，安装后 `module_ready=true`；错误取指地址的镜像被设备拒绝，证明准入校验有效。
 - STM：`status`/`probe`（ACK 0x79、Get=0x10、GetVersion=0x22、无擦写）、10,620 B SRAM 下载+回读+Go、raw 与 framed 两种会话的 `PONG SRAM`。
 - 监督：`module-test-hang` 触发 TWDT 复位（`reset_reason=6`），重连读到 seq=1/reason=2 故障，错误序号被拒、正确确认通过、`clear-fault` 恢复；恢复后 STM SRAM 重载并再次 PONG。
-- 未验证：STM Flash 擦写（本轮仅 SRAM）、物理断电、逻辑分析仪时序、其它板卡、SPI 服务。见 [实机记录](validation/port-layer-hardware.md)。
+- 未验证：STM Flash 擦写（本轮仅 SRAM）、物理断电、逻辑分析仪时序、其它板卡、SPI 服务。见 实机记录。
 
-### 历史证据文件
+### 验证记录存放政策
 
-- 全部证据见 [验证证据索引](validation/README.md)：ABI4 复核、ABI4 基线、实机验收、端口层验收、SPI 调查。这些是快照，不代表当前镜像。
+实机串口日志、JSON 证据、波形与镜像属于**本地开发产物**：不纳入版本控制，也不进入交付包；仓库只保留可复述的结论、命令与限制条件。需要长期留存的记录放在仓库之外（例如 `~/selfhosted/<project>/evidence/`）。
 
 ### 历史 ABI3 本地执行结果（2026-11-07）
 
@@ -74,7 +74,7 @@
 - 业务模块对启用版底座 ELF 的真实独立链接、镜像头和精确底座哈希绑定检查通过；无未解析符号、无重复底座定义。链接检查使用合成取指地址，产物明确标记 **NOT DEPLOYABLE**，不是可烧录或已运行的业务模块。
 - 私有工作树的生产配置底座也已重新构建。生产凭据、固件及旧开发历史不进入这份干净源码仓库。
 
-**后续用户重新连线并授权后，已完成新底座实机回归**：串口刷写校验、绑定新底座的模块更新、正常启动拒绝覆写、半包上传后重启恢复、真实模块入口死循环的看门狗复位及 Wi-Fi 修复、STM32 Flash/SRAM 编程、UART PONG/心跳全部通过。SPI 100 kHz / 500 kHz / 1 MHz 各 100 次双向 64 字节校验零错。曾出现 MISO 全 FF，重插 PA6↔GPIO0 后不改软件、不复位即恢复。见 [实机记录](validation/hardware-abi3.json)。**真实写入中途突然断电仍未测试，GitHub 发布与远程 CI 继续暂停。**
+**后续用户重新连线并授权后，已完成新底座实机回归**：串口刷写校验、绑定新底座的模块更新、正常启动拒绝覆写、半包上传后重启恢复、真实模块入口死循环的看门狗复位及 Wi-Fi 修复、STM32 Flash/SRAM 编程、UART PONG/心跳全部通过。SPI 100 kHz / 500 kHz / 1 MHz 各 100 次双向 64 字节校验零错。曾出现 MISO 全 FF，重插 PA6↔GPIO0 后不改软件、不复位即恢复。见 实机记录。**真实写入中途突然断电仍未测试，GitHub 发布与远程 CI 继续暂停。**
 
 ### 原生复现
 
@@ -124,7 +124,7 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 - STM SRAM programming/full readback/Go, one Linux PTY across preempting SRAM download, and resident reset/module replacement while UART was active passed. The STM SRAM application still returned PONG after service reinstall.
 - Two rounds of 100 transactions at each of 100 kHz, 500 kHz and 1 MHz passed: 600 bidirectional 64-byte transactions, both receivers verified, zero mismatched bytes. This does not establish the cause of the historical ABI3 all-FF incident.
 - STM Flash was not rewritten in this session. Physical mid-write power loss, other boards, complete-power-loss RTC retention and custom cache-off ISRs remain untested. Publication and remote CI remain paused.
-- See the [hardware report](validation/abi4-hardware.md) and [sanitized JSON evidence](validation/abi4-hardware.json). Production credentials/images and raw serial/Wi-Fi logs remain private.
+- See the hardware report and sanitized JSON evidence. Production credentials/images and raw serial/Wi-Fi logs remain private.
 
 ### Code organisation and default-service split (2026-11-08, local)
 
@@ -161,11 +161,11 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 - The default `stm-uart` service (52,772 B) was built against the device-reported addresses and installed to `module_ready=true`; an image built for a wrong text address was rejected by the device, proving the admission check.
 - STM: `status`/`probe` (ACK 0x79, Get=0x10, GetVersion=0x22, no erase/write), a 10,620-byte SRAM download with readback and Go, and `PONG SRAM` over both raw and framed sessions.
 - Supervision: `module-test-hang` produced a TWDT reset (`reset_reason=6`); after reconnect the device reported seq=1/reason=2, a wrong sequence was rejected, the exact one accepted, and `clear-fault` restored `module_ready=true`; the SRAM application was then reloaded and answered again.
-- Not covered: STM Flash erase/write (SRAM only), physical power loss, logic-analyzer timing, other boards, the SPI service. See the [hardware record](validation/port-layer-hardware.md).
+- Not covered: STM Flash erase/write (SRAM only), physical power loss, logic-analyzer timing, other boards, the SPI service. See the hardware record.
 
-### Historical evidence files
+### Where validation records live
 
-- All evidence lives in the [validation index](validation/README.md): ABI4 review, baseline, hardware acceptance, port-layer acceptance and the SPI investigation. Snapshots, not the current image.
+Serial logs, JSON evidence, waveforms and firmware images are **local development artifacts**: not version-controlled and not shipped. The repository keeps the reproducible conclusions, commands and limitations only; long-lived records are stored outside the repository (for example `~/selfhosted/<project>/evidence/`).
 
 ### Historical ABI3 local results (2026-11-07)
 
@@ -178,7 +178,7 @@ Ctrl-C 的旧测试在服务端发出 ACK 后立即中断客户端，不能保�
 - The business module completed a real independent link against the enabled resident ELF; header and exact base-hash binding validation passed, with no undefined symbols or duplicate resident definitions. The check uses a synthetic instruction address: its outputs are explicitly **NOT DEPLOYABLE**, not runtime validation.
 - The private production-configured resident was also rebuilt. Production credentials, firmware and old development history are excluded from this clean source repository.
 
-**After the user rewired the boards and authorized access, hardware regression passed**: verified serial resident flashing, exact-base-bound module updates, normal-boot overwrite rejection, interrupted-upload reboot recovery, a genuinely looping module entry followed by watchdog reset and Wi-Fi repair, STM32 Flash/SRAM programming, and UART PONG/heartbeat. SPI passed 100 bidirectional 64-byte transfers at each of 100 kHz, 500 kHz and 1 MHz. An all-FF MISO fault disappeared after reseating PA6↔GPIO0 without further software changes or resets. See [hardware evidence](validation/hardware-abi3.json). **Physical mid-write power loss remains untested; publication and remote CI remain paused.**
+**After the user rewired the boards and authorized access, hardware regression passed**: verified serial resident flashing, exact-base-bound module updates, normal-boot overwrite rejection, interrupted-upload reboot recovery, a genuinely looping module entry followed by watchdog reset and Wi-Fi repair, STM32 Flash/SRAM programming, and UART PONG/heartbeat. SPI passed 100 bidirectional 64-byte transfers at each of 100 kHz, 500 kHz and 1 MHz. An all-FF MISO fault disappeared after reseating PA6↔GPIO0 without further software changes or resets. See hardware evidence. **Physical mid-write power loss remains untested; publication and remote CI remain paused.**
 
 ### Reproduction and limits
 

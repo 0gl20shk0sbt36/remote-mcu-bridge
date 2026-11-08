@@ -16,3 +16,7 @@
 /.venv*/
 /.ruff_cache/
 /dist/
+
+# Local development artifacts: validation evidence, logs, captures
+/docs/validation/
+/evidence/

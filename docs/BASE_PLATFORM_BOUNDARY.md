@@ -41,4 +41,4 @@ Discovery identity is generic. A legacy STM discovery tag may be accepted as a c
 
 ## Evidence boundary
 
-ABI4 build/native tests establish only their recorded compilation or simulated execution properties. Synthetic-address linkage is not deployable. Historical ABI3 Wi-Fi A→B, restore and SPI observations must remain labeled ABI3 and cannot establish ABI4 hardware behavior. Independent ABI4 results are now recorded in the [hardware report](validation/abi4-hardware.md); they are limited to the tested board/workloads. Existing historical reports are not rewritten as new results.
+ABI4 build/native tests establish only their recorded compilation or simulated execution properties. Synthetic-address linkage is not deployable. Historical ABI3 Wi-Fi A→B, restore and SPI observations must remain labeled ABI3 and cannot establish ABI4 hardware behavior. Independent ABI4 results are now recorded in the hardware report; they are limited to the tested board/workloads. Existing historical reports are not rewritten as new results.

@@ -15,7 +15,7 @@
 | [依赖与平台耦合分析](DEPENDENCY_ANALYSIS.md) | 实测数字：服务→底座 0 个私有符号、平台代码占比与剩余硬耦合；附可复跑脚本 `tools/analyze_dependencies.py` |
 | [贡献指南](../CONTRIBUTING.md) | 开发流程、测试和提交要求 |
 | [变更记录](../CHANGELOG.md) | 版本级变更（Keep a Changelog 格式） |
-| [验证证据索引](validation/README.md) | 稳定命名的证据快照；日期在文件内部，不在文件名 |
+| 验证记录政策 | 实机/诊断记录属于本地开发产物，不入库、不进交付包；仓库只保留结论与命令 |
 | [安全政策](../SECURITY.md) | 可信网络限制、漏洞报告和部署风险 |
 | [许可证](../LICENSE) | MIT 条款与版权 |
 | `include/rmb/platform.h` | 存储与生命周期回调的权威定义 |
@@ -46,7 +46,7 @@ Recommended path: first deployment → [User guide](USER_GUIDE.md) → [Default 
 | [Dependency and platform coupling](DEPENDENCY_ANALYSIS.md) | Measured: zero base-private symbols imported by a service, platform-code share, remaining hard coupling; reproducible via `tools/analyze_dependencies.py` |
 | [Contributing](../CONTRIBUTING.md) | Development workflow, tests, and submission requirements |
 | [Changelog](../CHANGELOG.md) | Versioned changes (Keep a Changelog format) |
-| [Validation evidence index](validation/README.md) | Evidence snapshots with stable names; dates live inside the files |
+| Validation records policy | Hardware/diagnostic records are local development artifacts: not tracked and not shipped; the repository keeps conclusions and commands only |
 | [Security policy](../SECURITY.md) | Trusted-network limits, vulnerability reporting, and deployment risks |
 | [License](../LICENSE) | MIT terms and copyright |
 | `include/rmb/platform.h` | Authoritative storage/lifecycle callback definitions |

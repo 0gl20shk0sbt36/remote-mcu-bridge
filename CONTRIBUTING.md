@@ -85,3 +85,13 @@ Reproducible bug reports, tests, documentation, and code improvements are welcom
 - [ ] Remove secrets, personal paths, build outputs, and unrelated changes.
 
 Original contributions are provided under the project [MIT license](LICENSE). Preserve third-party copyright and license notices; do not relabel external SDK code as original project code.
+
+## 不纳入版本控制的内容
+
+- 实机与诊断记录（串口/Wi-Fi 日志、JSON 证据、波形、抓包）、固件镜像与构建产物、私有凭据：都属于本地开发产物。**不要提交，也不要放进交付包**；需要长期留存的放到仓库外（例如 `~/selfhosted/<project>/evidence/`）。
+- 仓库只保留可复述的结论、复现命令与限制条件（见 `docs/TESTING.md`）。Git 历史本身就是变更记录，不要用"日期命名的文件"代替提交历史。
+
+## What stays out of version control
+
+- Hardware and diagnostic records (serial/Wi-Fi logs, JSON evidence, waveforms, captures), firmware images, build output and private credentials are local development artifacts: **do not commit them and do not ship them**. Keep long-lived copies outside the repository (for example `~/selfhosted/<project>/evidence/`).
+- The repository keeps reproducible conclusions, commands and limitations (`docs/TESTING.md`). Git history is the change record; dated files are not a substitute for commits.

@@ -59,7 +59,7 @@ First release of the ABI4 generic resident plus the portable service runtime.
   modules cross-linked against the final base.
 - Hardware acceptance of both the ABI4 refactor and the port-layer firmware:
   Wi-Fi module replacement, five fault modes with RTC reports, STM SRAM/UART,
-  and SPI diagnostics as an optional service. See `docs/validation/`.
+  and SPI diagnostics as an optional service. Evidence is kept outside the repository as a local development artifact.
 
 ### Known limits
 
