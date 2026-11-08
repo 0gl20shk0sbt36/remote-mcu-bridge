@@ -95,8 +95,8 @@ python3 tools/module_ctl.py --help
 - [依赖与平台耦合分析](docs/DEPENDENCY_ANALYSIS.md)：实测服务→底座 0 个私有符号、平台代码占比、剩余硬耦合（`python3 tools/analyze_dependencies.py --proof …` 可复跑）
 - 打包发布：`python3 tools/make_release.py` 生成 `dist/remote-mcu-bridge-<version>.zip`（含 `MANIFEST.sha256`），只打包受版本控制的文件
 
-- [本地验证结果与边界](docs/TESTING.md) · [ABI4 重构合同](docs/ABI4_REFACTOR.md) · [看门狗与重连诊断](docs/WATCHDOG_RECOVERY.md)
-- [服务 A/B 实测与耦合评估](docs/SERVICE_AUTHORING.md) · [SPI 全 FF 深度调查](docs/SPI_INVESTIGATION.md)
+- [如何跑测试与覆盖边界](docs/TESTING.md) · [看门狗与重连诊断](docs/WATCHDOG_RECOVERY.md)
+- [服务编写契约](docs/SERVICE_AUTHORING.md)
 - [接线与 SRAM 限制](docs/WIRING.md) · [模块构建](docs/MODULE_BUILD.md) · [文档索引](docs/README.md) · [后端移植](docs/BACKEND_PORTING.md)
 - [贡献指南](CONTRIBUTING.md) · [安全政策](SECURITY.md)
 - [MIT 许可证](LICENSE)，Copyright (c) 2026 Remote MCU Bridge contributors。外部 SDK 和第三方组件仍适用各自许可证。
@@ -198,8 +198,8 @@ python3 tools/module_ctl.py --help
 - [Dependency and platform coupling](docs/DEPENDENCY_ANALYSIS.md): measured service→base coupling (zero private symbols), platform-code share and remaining hard coupling, reproducible with `tools/analyze_dependencies.py`
 - Release: `python3 tools/make_release.py` produces `dist/remote-mcu-bridge-<version>.zip` with a `MANIFEST.sha256`; only tracked files are packaged
 
-- [Local verification and limits](docs/TESTING.md)
-- [Service A/B and coupling assessment](docs/SERVICE_AUTHORING.md) · [SPI all-FF investigation](docs/SPI_INVESTIGATION.md)
+- [How to test and what is not covered](docs/TESTING.md)
+- [Service authoring contract](docs/SERVICE_AUTHORING.md)
 - [Wiring and SRAM limits](docs/WIRING.md) · [Module builds](docs/MODULE_BUILD.md) · [Documentation index](docs/README.md) · [Backend porting](docs/BACKEND_PORTING.md)
 - [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
 - [MIT license](LICENSE), Copyright (c) 2026 Remote MCU Bridge contributors. External SDKs and third-party components retain their own licenses.

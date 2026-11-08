@@ -44,6 +44,6 @@ python3 tools/module_ctl.py get-fault --host "$DEVICE_IP" --token-file "$TOKEN_F
 python3 tools/module_ctl.py ack-fault --host "$DEVICE_IP" --token-file "$TOKEN_FILE" --fault-seq "$FAULT_SEQ"
 ```
 
-FAULT_SEQ 必须来自实际 get-fault 的 seq。缺失、非整数、过期或不匹配序号被拒绝。确认报告本身不会恢复故障业务；clear-fault 是另外的明确操作，仍受单次初始化与本轮启动权限约束。修改/修复服务则按 enter-update → 重启 → 上传 → 提交 → 重启执行。
+FAULT_SEQ 必须来自实际 get-fault 的 seq。缺失、非整数、过期或不匹配序号被拒绝。确认报告本身不会恢复故障业务；clear-fault 是另外的明确操作，仍受单次初始化与本启动周期的执行权限约束。修改/修复服务则按 enter-update → 重启 → 上传 → 提交 → 重启执行。
 
 协议仍为可信局域网明文鉴权，不是 TLS。不得暴露互联网。

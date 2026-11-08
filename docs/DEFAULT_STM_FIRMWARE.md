@@ -117,7 +117,7 @@ python3 tools/wifidebug.py --host "$DEVICE_IP" --token-file "$TOKEN_FILE" logs -
 
 ### 8. 可选 SPI 不属于默认
 
-只有明确需要诊断时另建独立输出：将构建选择改为 `--builtin-service stm-spi`，仍按服务更新流程安装。还需 [可选接线](WIRING.md)、匹配的 STM SPI 从机应用及 UART 握手。仓库没有承诺提供完整可构建 STM SPI 从机工程；历史报告不是默认镜像包，也不能据过去成功排除间歇全 FF 故障。详见 [SPI 调查](SPI_INVESTIGATION.md)。
+只有明确需要诊断时另建独立输出：将构建选择改为 `--builtin-service stm-spi`，仍按服务更新流程安装。还需 [可选接线](WIRING.md)、匹配的 STM SPI 从机应用及 UART 握手。仓库没有承诺提供完整可构建 STM SPI 从机工程；也不把"曾经通过"当作排除间歇全 FF 故障的依据。
 
 ---
 
@@ -236,7 +236,7 @@ Interactive UART defaults to 115200 8N1. --send transmits exact UTF-8 text witho
 
 ### 8. SPI is optional, not default
 
-Only if diagnostics are explicitly required, build into a separate output directory with `--builtin-service stm-spi` and install through the normal service update flow. This also requires [optional wiring](WIRING.md), a matching STM SPI slave application and UART handshakes. A complete buildable STM slave project is not promised. Historical reports are not a bundled default image and past successes do not eliminate intermittent all-FF faults; see [SPI investigation](SPI_INVESTIGATION.md).
+Only if diagnostics are explicitly required, build into a separate output directory with `--builtin-service stm-spi` and install through the normal service update flow. This also requires [optional wiring](WIRING.md), a matching STM SPI slave application and UART handshakes. A complete buildable STM slave project is not promised, and past successes do not eliminate intermittent all-FF faults.
 
 ### 9. How the default service relates to the resident
 

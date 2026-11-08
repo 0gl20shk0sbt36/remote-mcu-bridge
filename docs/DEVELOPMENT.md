@@ -6,7 +6,7 @@
 
 本项目不是把 STM32 ROM 固化在底座中的远程串口固件。当前架构为 ABI4 通用驻留底座、独立服务和 STM32 目标程序三层；只有 ESP-IDF 后端已实现，SDK 基线为 ESP-IDF 5.5.5，当前板组合是 ESP32-C3 + STM32F103C8。F407ZG 的设备几何存在于源码，不等于该板组合已验收。
 
-建议依次阅读 [使用与部署](USER_GUIDE.md)、[服务 SDK 契约](SERVICE_AUTHORING.md)、[默认 STM 服务](DEFAULT_STM_FIRMWARE.md)、[更新边界](BASE_PLATFORM_BOUNDARY.md) 与 [看门狗](WATCHDOG_RECOVERY.md)。修改 ABI 前阅读 [ABI4 重构合同](ABI4_REFACTOR.md)；添加后端阅读 [后端移植](BACKEND_PORTING.md)。
+建议依次阅读 [使用与部署](USER_GUIDE.md)、[服务 SDK 契约](SERVICE_AUTHORING.md)、[默认 STM 服务](DEFAULT_STM_FIRMWARE.md)、[更新边界](BASE_PLATFORM_BOUNDARY.md) 与 [看门狗](WATCHDOG_RECOVERY.md)。修改 ABI 前阅读 [服务 SDK 契约](SERVICE_AUTHORING.md) 与 [底座/平台边界](BASE_PLATFORM_BOUNDARY.md)；添加后端阅读 [后端移植](BACKEND_PORTING.md) 与 [注册表契约](REGISTRY.md)。
 
 | 层/文件 | 所有权与修改入口 |
 |---|---|
@@ -108,7 +108,7 @@ python3 tools/rmb.py build --profile compile-enabled
 5. 检查 diff 不含令牌、Wi-Fi 配置、私有 ELF/bin/map/日志。哈希绑定不意味着产物可公开。
 6. 记录命令、配置类别、产物哈希和证据边界；未经授权不连接设备、不烧录、不执行破坏性 STM 操作。
 
-原生通过只证明模拟路径，交叉构建只证明编译/链接。既有证据见 [测试](TESTING.md) 与 ABI4 实机记录。历史 SPI 600 次结果属于当时可选诊断服务，不是默认 UART 服务的能力或本次新验收。
+原生通过只证明模拟路径，交叉构建只证明编译/链接；实机行为需单独验收，仓库不保存验收记录。
 
 ---
 
@@ -118,7 +118,7 @@ python3 tools/rmb.py build --profile compile-enabled
 
 ABI4 separates a generic resident, independently linked services, and target STM32 applications. ESP-IDF is the only implemented deployment backend; the SDK baseline is ESP-IDF 5.5.5 and the current bench combination is ESP32-C3 + STM32F103C8. F407ZG geometry in source does not establish hardware acceptance.
 
-Read [User guide](USER_GUIDE.md), [Service SDK contract](SERVICE_AUTHORING.md), [Default STM service](DEFAULT_STM_FIRMWARE.md), [Resident boundary](BASE_PLATFORM_BOUNDARY.md), and [Watchdog recovery](WATCHDOG_RECOVERY.md). Before ABI or backend changes, read [ABI4](ABI4_REFACTOR.md) and [Backend porting](BACKEND_PORTING.md).
+Read [User guide](USER_GUIDE.md), [Service SDK contract](SERVICE_AUTHORING.md), [Default STM service](DEFAULT_STM_FIRMWARE.md), [Resident boundary](BASE_PLATFORM_BOUNDARY.md), and [Watchdog recovery](WATCHDOG_RECOVERY.md). Before ABI or backend changes, read the [Service SDK contract](SERVICE_AUTHORING.md) and the [base/platform boundary](BASE_PLATFORM_BOUNDARY.md); for backends see [Backend porting](BACKEND_PORTING.md) and the [registry contract](REGISTRY.md).
 
 | Location | Responsibility |
 |---|---|
@@ -212,4 +212,4 @@ The wrapper prefers `.venv-style`; Windows uses `.venv-style\Scripts\python.exe`
 
 Run native tests, safe/enabled cross-builds and real module link checks; run hello manifest/native tests when relevant. Add regression cases for authentication, byte-exact replay, short I/O, absolute deadlines, stale handles/ACKs, concurrency, init failure and quarantine. Review diffs for tokens, private Wi-Fi configuration, ELF/bin/map and logs; binding does not make artifacts publishable. Record commands, configuration class, artifact hashes and limits. Do not connect/flash without authorization.
 
-Native tests prove simulated paths; cross-builds prove compilation/linking. See [Testing](TESTING.md) and existing ABI4 hardware evidence. Historical 600-transaction SPI results belong to optional diagnostics, not default UART capability or new validation.
+Native tests prove simulated paths; cross-builds prove compilation/linking. Hardware behaviour needs its own acceptance; the repository keeps no acceptance records.

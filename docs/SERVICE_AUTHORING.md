@@ -99,17 +99,10 @@ read/write 允许短传输：正数是实际字节数；read 的 0 是 EOF；负
 
 manifest 的 sources/drivers/整数 defines 选择服务代码；hello 不需要 UART/SPI 驱动。使用 `esp32_rom/module/build_module.py` 和准确的 ABI4 base ELF、真实预留 text/data 地址构建；不要复制历史地址。保留精确导入、唯一运行时、GP/孤儿段/边界及 SHA 检查。synthetic 地址的链接结果只是 compile proof，**不可部署**。
 
-原生测试应覆盖认证、REPLAY 原字节、短 I/O、绝对期限、过期 handle、初始化 gate、监听并发和监督超时。交叉构建证明编译/链接；native mock 证明对应路径；两者均不能证明 Wi-Fi 更新、实际 Flash/WDT 或目标 UART/SPI 行为。当前 ABI4 验证结果以本轮实际构建/测试记录为准，本页不预报通过数量。
+原生测试应覆盖认证、REPLAY 原字节、短 I/O、绝对期限、过期 handle、初始化 gate、监听并发和监督超时。交叉构建证明编译/链接；native mock 证明对应路径；两者均不能证明 Wi-Fi 更新、实际 Flash/WDT 或目标 UART/SPI 行为。本页不预报测试通过数量；请以你本地 `ctest --preset native` 与实际设备行为为准。
 
-## 历史 ABI3 实机记录（不是 ABI4 验收）
+## 与旧版本的关系（不是新服务模板）
 
-以下是迁移前的独立记录，不作为 ABI4 证据；哪些操作已在 ABI4 重跑，以新版实机报告为准：
+ABI3 时代的服务使用必填的 ROM 桩、数字 dispatch 和借用 `int *fd` 的静态 ops 表，这些接口在 ABI4 中已删除，**不能作为新服务的参考**。ABI3 的模块也无法装入 ABI4 底座：底座按准确 ELF 哈希与地址绑定准入，旧镜像会被拒绝，必须针对新底座重建。
 
-- ABI3 hello 使用必填 ROM_E_CAP 桩、dispatch 1 借用 `int *fd` 和静态 ops；这些是旧接口，不是新服务模板。
-- 当时 A/B 镜像分别 1740/1760 字节；text 1220/1240，data 均 480，bss 均 20。原 service.c 87 行、test_service.c 60 行，manifest 测试 217 行；builder 269→371 行。这些数值不是 ABI4 当前大小/行数。
-- 当时 CTest 20/20、manifest 11/11、A/B ASan+UBSan 原生测试通过；同一生产 ELF 重建完整旧业务成功。历史基座 SHA 为 `48a8d97b734f585156f811cb54e66bc9b78f18b7d395bb50f3a28df907d787c0`，不能用于 ABI4 重建。
-- 当时实机 Wi-Fi A→B 的 echo/ASCII 大写、计数重置、错误口令/129 字节文本/不支持操作拒绝、错误底座绑定拒绝均已记录；提交后到重启前服务不可用，重启才激活。底座 ELF/bin/bootloader/分区表 SHA 未变，未串口刷底座。
-- 随后恢复原 UART/SPI 模块；第一次 SPI 复测全 FF，并非成功。用户换线后的另一次 A→B→同一 SPI 恢复在三档速率各 100 次通过。间歇故障独立调查，不能断言只是线或归因于更新。见 [SPI 调查](SPI_INVESTIGATION.md)。
-- 旧生产基座/完整业务可能含凭据，必须私有；历史 hello 未检出 token/password 不代表其他模块或 ABI4 产物可公开。不要读取/输出生产配置来补写文档。
-
-ABI4 的独立硬件验收由新版报告证明，不由这些历史结果推定。
+历史上的具体尺寸、测试数量与实机结果属于当时的开发记录，不作为本版本的验收依据；本页只描述当前契约。
