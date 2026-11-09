@@ -51,7 +51,7 @@ foreach(pair IN ITEMS
     list(GET fields 0 name)
     list(GET fields 1 script)
     add_test(NAME ${name} COMMAND ${CMAKE_COMMAND} -E env "RMB_NATIVE_LIBRARY=$<TARGET_FILE:rombridge>" ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/${script})
-    set_tests_properties(${name} PROPERTIES TIMEOUT 60 LABELS native)
+    set_tests_properties(${name} PROPERTIES TIMEOUT 60 LABELS native SKIP_RETURN_CODE 77)
 endforeach()
 add_test(NAME spi_report_formatter COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/esp32_rom/tests/test_spi_report.py)
 set_tests_properties(spi_report_formatter PROPERTIES TIMEOUT 60 LABELS native)

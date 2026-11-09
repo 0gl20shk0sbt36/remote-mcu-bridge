@@ -243,6 +243,9 @@ def build_run(post):
     sys.path.insert(0, str(ROOT.parent / "tools"))
     from native_deps import cjson
 
+    if not os.environ.get("IDF_PATH"):
+        print("SKIP: needs IDF_PATH for the mbedtls sources; run inside the ESP-IDF image")
+        sys.exit(77)
     cj = cjson()
     mbed = Path(os.environ["IDF_PATH"]) / "components/mbedtls/mbedtls"
     source = (ROOT / "main/supervisor.inc").read_text()

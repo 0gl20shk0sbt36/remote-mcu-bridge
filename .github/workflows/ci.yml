@@ -80,3 +80,12 @@ jobs:
           mapfile -t elfs < <(find "$build" -maxdepth 1 -name '*.elf' -type f)
           test "${#elfs[@]}" -eq 1
           python3 tools/check_module_link.py --base-elf "${elfs[0]}"
+      # Three fixtures compile production sources against mbedtls and skip (exit 77)
+      # when IDF_PATH is absent, so they only run where the SDK sources exist.
+      - name: Native suite with SDK sources
+        if: matrix.profile == 'compile-enabled'
+        shell: bash
+        run: |
+          cmake --preset native
+          cmake --build --preset native
+          ctest --preset native --output-on-failure

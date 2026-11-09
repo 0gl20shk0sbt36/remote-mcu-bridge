@@ -248,9 +248,14 @@ class SupervisorTests(unittest.TestCase):
             self.assertEqual(observed, [{"token": "native-cli-test-token", "op": "enter-update"}])
 
     def test_actual_hung_entry_management(self):
-        subprocess.run(
-            [sys.executable, str(ROOT / "tests/test_supervisor_startup.py")], check=True, timeout=15
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "tests/test_supervisor_startup.py")],
+            check=False,
+            timeout=15,
         )
+        if result.returncode == 77:
+            self.skipTest("needs IDF_PATH for the mbedtls sources")
+        self.assertEqual(result.returncode, 0)
 
 
 if __name__ == "__main__":
