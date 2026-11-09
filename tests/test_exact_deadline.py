@@ -12,6 +12,23 @@ import re
 import subprocess
 import tempfile
 
+
+def rmb_tmp_dir():
+    """Temporary base: TMPDIR, else ~/tmp when writable, else None (system temp).
+
+    CI runners have no ~/tmp, so a hard-coded home directory is not portable.
+    """
+    explicit = os.environ.get("TMPDIR")
+    if explicit:
+        return explicit
+    base = Path.home() / "tmp"
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return str(base)
+
+
 ROOT = Path(__file__).resolve().parents[1]
 fixture = ast.parse((ROOT / "esp32_rom/tests/test_generic_network.py").read_text())
 pre = next(
@@ -116,9 +133,7 @@ int main(void) {
  puts("PASS actual base/network/STM/hello final-byte deadlines: before accepted, equality/late rejected for read/write/replay");
 }
 """
-with tempfile.TemporaryDirectory(
-    prefix="rmb-exact-deadline-", dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
-) as work:
+with tempfile.TemporaryDirectory(prefix="rmb-exact-deadline-", dir=rmb_tmp_dir()) as work:
     path = Path(work)
     (path / "deadline.c").write_text(
         pre + wrappers + module_shims + seam + base + network + stm + hello + post

@@ -12,6 +12,23 @@ import shlex
 import subprocess
 import tempfile
 
+
+def rmb_tmp_dir():
+    """Temporary base: TMPDIR, else ~/tmp when writable, else None (system temp).
+
+    CI runners have no ~/tmp, so a hard-coded home directory is not portable.
+    """
+    explicit = os.environ.get("TMPDIR")
+    if explicit:
+        return explicit
+    base = Path.home() / "tmp"
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return str(base)
+
+
 ROOT = Path(__file__).resolve().parents[2]
 STUBS = r"""
 #include <assert.h>
@@ -253,7 +270,7 @@ def main():
     ):
         if not re.search(r"static\s+\w+\s+" + name + r"\s*\(", extracted):
             raise RuntimeError(f"production function missing: {name}")
-    base = Path(os.environ.get("TMPDIR", str(Path.home() / "tmp"))).expanduser()
+    base = Path(rmb_tmp_dir() or tempfile.gettempdir()).expanduser()
     base.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="uart-trace-host-", dir=base))
     harness = work / "uart_trace_host.c"

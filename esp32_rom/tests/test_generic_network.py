@@ -5,6 +5,23 @@ import os
 import subprocess
 import tempfile
 
+
+def rmb_tmp_dir():
+    """Temporary base: TMPDIR, else ~/tmp when writable, else None (system temp).
+
+    CI runners have no ~/tmp, so a hard-coded home directory is not portable.
+    """
+    explicit = os.environ.get("TMPDIR")
+    if explicit:
+        return explicit
+    base = Path.home() / "tmp"
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return str(base)
+
+
 ROOT = Path(__file__).resolve().parents[2]
 source = (ROOT / "esp32_rom/main/generic_network.c").read_text()
 # Strip includes only; all production functions and state are compiled verbatim.
@@ -172,7 +189,7 @@ int main(void) {
  puts("PASS production ABI4 auth, decoded duplicate/NUL rejection, replay/consume, stale generations, binary I/O, EOF, nonblocking and exact deadlines");
 }
 """
-with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))) as d:
+with tempfile.TemporaryDirectory(dir=rmb_tmp_dir()) as d:
     p = Path(d)
     (p / "network.c").write_text(pre + source + post)
     for stack_bytes in (12288, 16384):

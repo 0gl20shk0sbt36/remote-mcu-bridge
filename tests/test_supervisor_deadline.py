@@ -6,6 +6,23 @@ import os
 import subprocess
 import tempfile
 
+
+def rmb_tmp_dir():
+    """Temporary base: TMPDIR, else ~/tmp when writable, else None (system temp).
+
+    CI runners have no ~/tmp, so a hard-coded home directory is not portable.
+    """
+    explicit = os.environ.get("TMPDIR")
+    if explicit:
+        return explicit
+    base = Path.home() / "tmp"
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return str(base)
+
+
 ROOT = Path(__file__).resolve().parents[1]
 supervisor = (ROOT / "esp32_rom/main/supervisor.inc").read_text()
 types = supervisor[
@@ -126,9 +143,7 @@ int main(void) {
  puts("PASS real worker completion deadline, no late success/notification, init failure and monitor persist sequence-aware RTC reports");
 }
 """
-with tempfile.TemporaryDirectory(
-    prefix="rmb-supervisor-deadline-", dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
-) as work:
+with tempfile.TemporaryDirectory(prefix="rmb-supervisor-deadline-", dir=rmb_tmp_dir()) as work:
     path = Path(work)
     journal = (ROOT / "esp32_rom/main/service_watchdog.inc").read_text()
     (path / "deadline.c").write_text(

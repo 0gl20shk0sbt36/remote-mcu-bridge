@@ -1,40 +1,77 @@
 name: build
+
 on: [push, pull_request, workflow_dispatch]
+
 permissions:
   contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   native:
+    name: native (no SDK)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 tools/native_deps.py
-      - run: cmake --preset native && cmake --build --preset native && ctest --preset native --output-on-failure
+      - name: Fetch pinned cJSON for fixtures
+        run: python3 tools/native_deps.py
+      - name: Configure, build and test
+        run: |
+          cmake --preset native
+          cmake --build --preset native
+          ctest --preset native --output-on-failure
+
   esp-idf:
+    name: esp-idf (${{ matrix.profile }})
     runs-on: ubuntu-latest
     container: espressif/idf:v5.5.5
     strategy:
+      fail-fast: false
       matrix:
         profile: [safe, compile-enabled]
+    env:
+      IDF_PATH: /opt/esp/idf
+      IDF_TOOLS_PATH: /opt/esp
     steps:
       - uses: actions/checkout@v4
-      - name: Set installed SDK environment (no export.sh)
+      - name: Set up ESP-IDF toolchain
         shell: bash
         run: |
-          : "${IDF_PATH:=/opt/esp/idf}"
-          : "${IDF_TOOLS_PATH:=/opt/esp}"
-          test -f "$IDF_PATH/tools/idf.py"
-          shopt -s nullglob
-          compilers=("$IDF_TOOLS_PATH"/tools/riscv32-esp-elf/*/riscv32-esp-elf/bin/riscv32-esp-elf-gcc)
+          # export.sh is the documented entry point but aborts when an optional
+          # tool is missing, so add the paths directly as well.
+          if [ -f "$IDF_PATH/export.sh" ]; then
+            . "$IDF_PATH/export.sh" || echo "export.sh reported problems; using explicit paths"
+          fi
+          for d in \
+            "$IDF_TOOLS_PATH"/tools/cmake/*/bin \
+            "$IDF_TOOLS_PATH"/tools/ninja/*/bin \
+            "$IDF_TOOLS_PATH"/tools/ninja/*/ \
+            "$IDF_TOOLS_PATH"/tools/riscv32-esp-elf/*/riscv32-esp-elf/bin \
+            "$IDF_TOOLS_PATH"/python_env/idf5.5_py*_env/bin; do
+            [ -d "$d" ] && echo "$d" >> "$GITHUB_PATH"
+          done
           pythons=("$IDF_TOOLS_PATH"/python_env/idf5.5_py*_env/bin/python)
-          test "${#compilers[@]}" -eq 1
-          test "${#pythons[@]}" -eq 1
-          printf '%s\n' "${compilers[0]%/*}" "${pythons[0]%/*}" >> "$GITHUB_PATH"
-          printf '%s\n' "IDF_PATH=$IDF_PATH" "IDF_TOOLS_PATH=$IDF_TOOLS_PATH" "IDF_PYTHON_ENV_PATH=${pythons[0]%/bin/python}" >> "$GITHUB_ENV"
-      - name: Compile only; no device, flash or networking
+          if [ "${#pythons[@]}" -eq 1 ]; then
+            echo "IDF_PYTHON_ENV_PATH=${pythons[0]%/bin/python}" >> "$GITHUB_ENV"
+          fi
+      - name: Build resident image (compile only; no device, flash or network)
         shell: bash
+        env:
+          PROFILE: ${{ matrix.profile }}
         run: |
-          python tools/rmb.py configure --backend esp-idf --board esp32c3-stm32f103 --profile ${{ matrix.profile }}
-          python tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103 --profile ${{ matrix.profile }}
+          command -v cmake
+          command -v ninja
+          command -v python3
+          # compile-enabled needs a non-placeholder network identity; these are
+          # public CI placeholders and the artefacts are never flashed.
+          creds="$RUNNER_TEMP/ci-credentials"
+          printf 'ci-compile-only-ssid\nci-compile-only-password\nci-compile-only-token-0000000000\n' > "$creds"
+          python3 tools/rmb.py configure --backend esp-idf --board esp32c3-stm32f103 \
+            --profile "$PROFILE" --credentials-file "$creds"
+          python3 tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103 \
+            --profile "$PROFILE" --credentials-file "$creds"
       - name: Real module link check — NOT DEPLOYABLE
         if: matrix.profile == 'compile-enabled'
         shell: bash
@@ -42,4 +79,4 @@ jobs:
           build=out/esp-idf/esp32c3-stm32f103/compile-enabled
           mapfile -t elfs < <(find "$build" -maxdepth 1 -name '*.elf' -type f)
           test "${#elfs[@]}" -eq 1
-          python tools/check_module_link.py --base-elf "${elfs[0]}"
+          python3 tools/check_module_link.py --base-elf "${elfs[0]}"

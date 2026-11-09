@@ -38,6 +38,23 @@ import sys
 sys.path.insert(0, str(ROOT.parent / "tools"))
 from native_deps import cjson
 
+
+def rmb_tmp_dir():
+    """Temporary base: TMPDIR, else ~/tmp when writable, else None (system temp).
+
+    CI runners have no ~/tmp, so a hard-coded home directory is not portable.
+    """
+    explicit = os.environ.get("TMPDIR")
+    if explicit:
+        return explicit
+    base = Path.home() / "tmp"
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return str(base)
+
+
 CJSON = cjson()
 service = (ROOT / "main/resident.c").read_text()
 business = (ROOT / "module/business.c").read_text()
@@ -231,9 +248,7 @@ int main(void){
  return 0;
 }
 """
-with tempfile.TemporaryDirectory(
-    prefix="v14-streams-", dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
-) as tmp:
+with tempfile.TemporaryDirectory(prefix="v14-streams-", dir=rmb_tmp_dir()) as tmp:
     p = Path(tmp)
     (p / "test.c").write_text(preamble + uart_mode + helpers + streams + tests)
     subprocess.run(

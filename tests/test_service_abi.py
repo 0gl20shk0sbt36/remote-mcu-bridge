@@ -7,6 +7,23 @@ import subprocess
 import tempfile
 import unittest
 
+
+def rmb_tmp_dir():
+    """Temporary base: TMPDIR, else ~/tmp when writable, else None (system temp).
+
+    CI runners have no ~/tmp, so a hard-coded home directory is not portable.
+    """
+    explicit = os.environ.get("TMPDIR")
+    if explicit:
+        return explicit
+    base = Path.home() / "tmp"
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return str(base)
+
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -49,9 +66,7 @@ int main(void) {
  module_entry_fn fn=entry;assert(fn(&host)==17);assert(host.watchdog_open("root",100)==7);assert(!host.watchdog_feed(7,1));assert(!host.watchdog_close(7));return 0;
 }
 """
-        with tempfile.TemporaryDirectory(
-            dir=os.environ.get("TMPDIR", str(Path.home() / "tmp"))
-        ) as d:
+        with tempfile.TemporaryDirectory(dir=rmb_tmp_dir()) as d:
             p = Path(d)
             (p / "sdk.c").write_text(source)
             subprocess.run(
