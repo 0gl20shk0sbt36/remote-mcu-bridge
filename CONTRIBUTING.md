@@ -21,7 +21,12 @@
    python3 tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103
    ```
 4. 如适用，分别检查服务/模块关闭的安全默认配置和公开占位值启用的 **compile-only** 配置。不要把占位配置烧录到设备，也不要提交真实 `sdkconfig`、网络口令或令牌。
-5. 在 PR 中列出准确命令、工具版本、返回结果与未执行的检查。未执行应写“未执行”，不能写通过。构建、模拟、CI、实机及实际断电测试是不同证据。
+5. **推送前先在本地复演 CI**（与 `.github/workflows/ci.yml` 同一套步骤、同一个剥离环境）：
+   ```sh
+   IDF_PATH=... IDF_TOOLS_PATH=... ./tools/ci_rehearsal.sh all   # 或 native / esp-idf
+   ```
+   它会在没有 `IDF_PATH`、没有 `~/tmp`、PATH 最小的条件下跑完原生套件与两个 ESP-IDF 档；失败就不要推送。托管 runner 上没有容器环境时，这是唯一能提前发现“本地能过、CI 不过”的手段。
+6. 在 PR 中列出准确命令、工具版本、返回结果与未执行的检查。未执行应写“未执行”，不能写通过。构建、模拟、CI、实机及实际断电测试是不同证据。
 
 ### 代码与接口约束
 
@@ -65,7 +70,12 @@ Reproducible bug reports, tests, documentation, and code improvements are welcom
    python3 tools/rmb.py build --backend esp-idf --board esp32c3-stm32f103
    ```
 4. Where applicable, separately check the service/module-disabled safe configuration and the public placeholder-enabled **compile-only** configuration. Never flash placeholders or commit real `sdkconfig`, network passwords, or tokens.
-5. Record exact commands, versions, actual results, and checks not run in the PR. Say “not run” rather than “passed” when appropriate. Compilation, simulation, CI, hardware execution, and physical power-cut testing are different evidence.
+5. **Rehearse CI locally before pushing** (same steps as `.github/workflows/ci.yml`, same stripped environment):
+   ```sh
+   IDF_PATH=... IDF_TOOLS_PATH=... ./tools/ci_rehearsal.sh all   # or native / esp-idf
+   ```
+   It runs the native suite and both ESP-IDF profiles with no inherited `IDF_PATH`, no `~/tmp` and a minimal PATH. If it fails, do not push. Without a container runtime this is the only way to catch "passes here, fails on the runner" early.
+6. Record exact commands, versions, actual results, and checks not run in the PR. Say “not run” rather than “passed” when appropriate. Compilation, simulation, CI, hardware execution, and physical power-cut testing are different evidence.
 
 ### Code and interface constraints
 
