@@ -19,9 +19,9 @@ First release of the ABI4 generic resident plus the portable service runtime.
   coupling measurement tool `tools/analyze_dependencies.py`.
 - `test_build_config.py`, `test_cli_token_file.py` and `test_port_boundary.py`
   native suites.
-- Documentation set: development, service authoring, default STM firmware,
-  resident platform porting, cross-platform porting handbook, dependency
-  analysis, testing and validation evidence index.
+- Documentation set: user guide, default STM firmware manual, service authoring,
+  development, testing, resident platform porting, cross-platform porting
+  handbook, backend/registry/ESP porting guides and dependency analysis.
 - Deterministic release builder `tools/make_release.py`.
 
 ### Changed
@@ -57,9 +57,9 @@ First release of the ABI4 generic resident plus the portable service runtime.
 - Native suite: 31/31 (needs `IDF_PATH` so fixtures can find cJSON).
 - ESP-IDF `safe` and `compile-enabled` builds; default and optional service
   modules cross-linked against the final base.
-- Hardware acceptance of both the ABI4 refactor and the port-layer firmware:
-  Wi-Fi module replacement, five fault modes with RTC reports, STM SRAM/UART,
-  and SPI diagnostics as an optional service. Evidence is kept outside the repository as a local development artifact.
+- Hardware acceptance on one bench unit: Wi-Fi module replacement, five fault
+  modes with RTC reports, STM32 SRAM/UART paths and SPI diagnostics as an
+  optional service. Records stay local and are not part of this repository.
 
 ### Known limits
 
